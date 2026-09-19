@@ -47,6 +47,7 @@
 #include "i_video.h"
 
 #include "i_system.h"
+#include "esp_heap_caps.h"
 
 #include "w_wad.h"
 #include "z_zone.h"
@@ -92,41 +93,59 @@ void I_Tactile(int on, int off, int total)
 // by trying progressively smaller zone sizes until one is found that
 // works.
 
+// Upstream asks for 6 MiB and refuses to start below that. This board has
+// 322,404 bytes of DRAM in total, so the zone takes whatever is left after the
+// framebuffer, the DMA chunks and the engine's own statics -- and it only works
+// at all because the WAD is memory-mapped, so W_CacheLumpNum returns pointers
+// into flash and never allocates the lump caching that normally dominates here.
+// Upstream asks for 6 MiB and refuses to start below that. This board has
+// 322,404 bytes of DRAM in total, and -- more to the point -- its heap is three
+// disjoint regions, so the zone is bounded by the largest contiguous block
+// rather than by the total. Once the framebuffer has split the big region there
+// is far less contiguous space than "free bytes" suggests.
+//
+// The zone is not the only claimant either. W_AddFile reallocates the lump
+// directory (1137 lumps) as one contiguous block straight after Z_Init, so the
+// zone must leave a block big enough for it in some *other* region -- taking a
+// reserve out of the same block it is sizing against does not help at all.
+//
+// So: grab the largest block, then check what contiguous space survives. If the
+// lump directory would not fit, give it back and try smaller.
+#define BADGE_LUMPINFO_HEADROOM (36 * 1024)
+
 static byte *AutoAllocMemory(int *size, int default_ram, int min_ram)
 {
-    byte *zonemem;
+    (void)default_ram;
+    (void)min_ram;
 
-    // Allocate the zone memory.  This loop tries progressively smaller
-    // zone sizes until a size is found that can be allocated.
-    // If we used the -mb command line parameter, only the parameter
-    // provided is accepted.
+    size_t want = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    byte *zonemem = NULL;
 
-    zonemem = NULL;
-
-    while (zonemem == NULL)
+    while (want >= 16 * 1024)
     {
-        // We need a reasonable minimum amount of RAM to start.
-
-        if (default_ram < min_ram)
+        zonemem = heap_caps_malloc(want, MALLOC_CAP_8BIT);
+        if (zonemem != NULL)
         {
-            I_Error("Unable to allocate %i MiB of RAM for zone", default_ram);
+            size_t left = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+            if (left >= BADGE_LUMPINFO_HEADROOM)
+                break;                    // the lump directory still has a home
+
+            free(zonemem);
+            zonemem = NULL;
         }
-
-        // Try to allocate the zone memory.
-
-        *size = default_ram * 1024 * 1024;
-
-        zonemem = malloc(*size);
-
-        // Failed to allocate?  Reduce zone size until we reach a size
-        // that is acceptable.
-
-        if (zonemem == NULL)
-        {
-            default_ram -= 1;
-        }
+        want -= 4 * 1024;
     }
 
+    if (zonemem == NULL)
+        I_Error("no zone heap: %u free, %u contiguous, need %u left over",
+                (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
+                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
+                (unsigned)BADGE_LUMPINFO_HEADROOM);
+
+    *size = (int)want;
+    printf("zone: %u bytes, %u contiguous left for everything else\n",
+           (unsigned)want,
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
     return zonemem;
 }
 

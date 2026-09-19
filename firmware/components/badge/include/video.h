@@ -35,6 +35,10 @@ bool video_init(void);
 // Takes Doom's PLAYPAL lump (768 bytes of R,G,B) and builds the RGB565 lookup.
 void video_set_palette(const uint8_t *playpal);
 
+// Doom applies a gamma ramp to the palette before display; this folds that in
+// so the engine does not need a second 768-byte staging buffer.
+void video_set_palette_gamma(const uint8_t *playpal, const uint8_t *gamma);
+
 uint8_t *video_framebuffer(void);
 
 // Converts the 8bpp framebuffer to RGB565 and pushes it to the panel, overlapping

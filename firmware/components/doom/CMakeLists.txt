@@ -22,6 +22,14 @@ idf_component_register(
     REQUIRES badge esp_partition esp_timer
 )
 
+# 8bpp output at Doom's native resolution: the engine's paletted buffer is the
+# one the SPI driver scans out, so there is no format conversion in between.
+target_compile_definitions(${COMPONENT_LIB} PRIVATE
+    CMAP256
+    DOOMGENERIC_RESX=320
+    DOOMGENERIC_RESY=200
+)
+
 # Doom is 1993 C. These are upstream's warts, not ours, and burying our own
 # diagnostics under thousands of lines of them helps nobody.
 target_compile_options(${COMPONENT_LIB} PRIVATE

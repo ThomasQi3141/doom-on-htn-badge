@@ -1363,7 +1363,13 @@ void D_DoomMain (void)
     I_AtExit(M_SaveDefaults, false);
 
     // Find main IWAD file and load it.
-    iwadfile = D_FindIWAD(IWAD_MASK_DOOM, &gamemission);
+    // There is no filesystem to search. The WAD is a flash partition, and the
+    // badge wad_file_class ignores the path it is handed -- but D_FindIWAD
+    // probes for files by name long before any of that is reached, so it is
+    // bypassed entirely. gamemode is still derived from the lumps by
+    // D_IdentifyVersion below, so a different WAD in the partition still works.
+    gamemission = doom;
+    iwadfile = "flash:wad";
 
     // None found?
 

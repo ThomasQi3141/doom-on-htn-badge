@@ -90,7 +90,10 @@ angle_t			clipangle;
 // maps the visible view angles to screen X coordinates,
 // flattening the arc to a flat projection plane.
 // There will be many angles mapped to the same X. 
-int			viewangletox[FINEANGLES/2];
+// 4096 entries, each holding a screen column clamped to -1..viewwidth+1.
+// As int that is 16,384 bytes; as short it is 8,192, and the range fits with
+// three orders of magnitude to spare.
+short			viewangletox[FINEANGLES/2];
 
 // The xtoviewangleangle[] table maps a screen pixel
 // to the lowest viewangle that maps back to x ranges

@@ -38,6 +38,7 @@ rcsid[] = "$Id: i_x.c,v 1.6 1997/02/03 22:45:10 b1 Exp $";
 #include "doomkeys.h"
 
 #include "doomgeneric.h"
+#include "video.h"
 
 #include <stdbool.h>
 #include <stdlib.h>
@@ -287,7 +288,11 @@ void I_InitGraphics (void)
 
 
     /* Allocate screen to draw to */
-	I_VideoBuffer = (byte*)Z_Malloc (SCREENWIDTH * SCREENHEIGHT, PU_STATIC, NULL);  // For DOOM to draw on
+	// Doom draws straight into the buffer the SPI driver scans out. Upstream
+	// allocates a second 64,000-byte buffer here and memcpys it every frame;
+	// on a 322 KB board that second buffer is not affordable and the copy
+	// buys nothing.
+	I_VideoBuffer = video_framebuffer();
 
 	screenvisible = true;
 
@@ -297,7 +302,7 @@ void I_InitGraphics (void)
 
 void I_ShutdownGraphics (void)
 {
-	Z_Free (I_VideoBuffer);
+	// Not ours to free: the framebuffer belongs to the video driver.
 }
 
 void I_StartFrame (void)
@@ -333,40 +338,8 @@ void I_FinishUpdate (void)
     //x_offset     = 0;
     x_offset_end = ((s_Fb.xres - (SCREENWIDTH  * fb_scaling)) * s_Fb.bits_per_pixel/8) - x_offset;
 
-    /* DRAW SCREEN */
-    line_in  = (unsigned char *) I_VideoBuffer;
-    line_out = (unsigned char *) DG_ScreenBuffer;
-
-    y = SCREENHEIGHT;
-
-    while (y--)
-    {
-        int i;
-        for (i = 0; i < fb_scaling; i++) {
-            line_out += x_offset;
-#ifdef CMAP256
-            if (fb_scaling == 1) {
-                memcpy(line_out, line_in, SCREENWIDTH); /* fb_width is bigger than Doom SCREENWIDTH... */
-            } else {
-                int j;
-
-                for (j = 0; j < SCREENWIDTH; j++) {
-                    int k;
-                    for (k = 0; k < fb_scaling; k++) {
-                        line_out[j * fb_scaling + k] = line_in[j];
-                    }
-                }
-            }
-#else
-            //cmap_to_rgb565((void*)line_out, (void*)line_in, SCREENWIDTH);
-            cmap_to_fb((void*)line_out, (void*)line_in, SCREENWIDTH);
-#endif
-            line_out += (SCREENWIDTH * fb_scaling * (s_Fb.bits_per_pixel/8)) + x_offset_end;
-        }
-        line_in += SCREENWIDTH;
-    }
-
-	DG_DrawFrame();
+    // Nothing to copy: I_VideoBuffer *is* DG_ScreenBuffer.
+    DG_DrawFrame();
 }
 
 //
@@ -387,36 +360,10 @@ void I_ReadScreen (byte* scr)
 
 void I_SetPalette (byte* palette)
 {
-	int i;
-	//col_t* c;
-
-	//for (i = 0; i < 256; i++)
-	//{
-	//	c = (col_t*)palette;
-
-	//	rgb565_palette[i] = GFX_RGB565(gammatable[usegamma][c->r],
-	//								   gammatable[usegamma][c->g],
-	//								   gammatable[usegamma][c->b]);
-
-	//	palette += 3;
-	//}
-    
-
-    /* performance boost:
-     * map to the right pixel format over here! */
-
-    for (i=0; i<256; ++i ) {
-        colors[i].a = 0;
-        colors[i].r = gammatable[usegamma][*palette++];
-        colors[i].g = gammatable[usegamma][*palette++];
-        colors[i].b = gammatable[usegamma][*palette++];
-    }
-
-#ifdef CMAP256
-
+    // Fold Doom's gamma ramp in on the way to RGB565 rather than staging a
+    // second copy of the palette.
+    video_set_palette_gamma(palette, gammatable[usegamma]);
     palette_changed = true;
-
-#endif  // CMAP256
 }
 
 // Given an RGB value, find the closest matching palette index.

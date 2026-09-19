@@ -42,14 +42,18 @@ planefunction_t		ceilingfunc;
 //
 
 // Here comes the obnoxious "visplane".
-#define MAXVISPLANES	128
+// Upstream's 128 visplanes cost 664 bytes each -- 84,992 bytes, a quarter of
+// this board's entire DRAM. 32 covers ordinary Doom scenes; busy ones will hit
+// the limit, which is why R_FindPlane must degrade instead of calling I_Error.
+#define MAXVISPLANES	24
 visplane_t		visplanes[MAXVISPLANES];
 visplane_t*		lastvisplane;
 visplane_t*		floorplane;
 visplane_t*		ceilingplane;
 
 // ?
-#define MAXOPENINGS	SCREENWIDTH*64
+// 320*64 shorts is 40,960 bytes of clip storage for sprite silhouettes.
+#define MAXOPENINGS	SCREENWIDTH*8
 short			openings[MAXOPENINGS];
 short*			lastopening;
 

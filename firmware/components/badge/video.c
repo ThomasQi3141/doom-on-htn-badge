@@ -10,7 +10,10 @@ static const char *TAG = "video";
 
 // Rows converted per DMA transfer. Two of these ping-pong, so the CPU converts
 // the next chunk while the SPI peripheral is still sending the previous one.
-#define CHUNK_ROWS 16
+// 8 rows per transfer. Halving this from 16 gives back 10,240 bytes and the
+// SPI peripheral stays saturated either way -- the conversion is not the
+// bottleneck, the 40 MHz bus is.
+#define CHUNK_ROWS 8
 
 static uint8_t  *s_fb;                     // DOOM_W * DOOM_H, 8bpp
 static uint16_t *s_chunk[DISPLAY_SLOTS];   // DMA-capable, byte-swapped RGB565
@@ -51,6 +54,17 @@ void video_set_palette(const uint8_t *playpal)
         uint8_t b = playpal[i * 3 + 2];
         uint16_t c = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
         s_pal[i] = (uint16_t)((c >> 8) | (c << 8));   // panel wants big-endian
+    }
+}
+
+void video_set_palette_gamma(const uint8_t *playpal, const uint8_t *gamma)
+{
+    for (int i = 0; i < 256; i++) {
+        uint8_t r = gamma[playpal[i * 3 + 0]];
+        uint8_t g = gamma[playpal[i * 3 + 1]];
+        uint8_t b = gamma[playpal[i * 3 + 2]];
+        uint16_t c = (uint16_t)(((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3));
+        s_pal[i] = (uint16_t)((c >> 8) | (c << 8));
     }
 }
 

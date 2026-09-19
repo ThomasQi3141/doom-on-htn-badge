@@ -74,3 +74,13 @@ void W_Checksum(sha1_digest_t digest)             { memset(digest, 0, sizeof(sha
 // End-of-level statistics dumping, a debugging aid for demo verification.
 void StatCopy(void *stats)                        { (void)stats; }
 void StatDump(void)                               { }
+
+// ------------------------------------------------- netgame globals
+// Their definitions lived in the net client, which is gone. The engine still
+// branches on them, and with both false every one of those branches takes the
+// single-player path.
+boolean drone = false;
+boolean net_client_connected = false;
+
+// Lived in i_sound.c. Nothing reads it now except S_ChangeMusic's guard.
+int snd_musicdevice = 0;
