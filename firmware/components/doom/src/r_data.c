@@ -243,8 +243,13 @@ void R_GenerateComposite (int texnum)
 
     texture = textures[texnum];
 
+    // PU_CACHE, not PU_STATIC: a composite can always be rebuilt from the
+    // patches, which are in flash. Under pressure the zone can then reclaim
+    // one instead of failing the allocation -- R_GetColumn already checks for
+    // a NULL composite and regenerates. On a 102 KB zone this is the
+    // difference between a purge and a reboot.
     block = Z_Malloc (texturecompositesize[texnum],
-		      PU_STATIC, 
+		      PU_CACHE, 
 		      &texturecomposite[texnum]);	
 
     collump = texturecolumnlump[texnum];

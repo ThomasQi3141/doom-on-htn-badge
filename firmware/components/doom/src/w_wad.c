@@ -84,42 +84,29 @@ unsigned int W_LumpNameHash(const char *s)
 }
 
 // Increase the size of the lumpinfo[] array to the specified size.
+//
+// Upstream callocs a new array and copies into it, which on this board is a
+// problem out of proportion to its size: the heap is three disjoint regions,
+// so a ~27 KB contiguous request has to be reserved for out of whatever the
+// zone heap does not take. Getting that reserve wrong shows up as "Couldn't
+// realloc lumpinfo" with no hint that the real cause was somewhere else
+// entirely -- it cost two rounds of debugging here already.
+//
+// The badge loads exactly one WAD, known at build time, so a static array
+// removes the allocation, the reserve and the failure mode together. Entries
+// never move, so there is nothing to copy and no cache pointers to fix up.
+#define BADGE_MAX_LUMPS 1200
+static lumpinfo_t badge_lumpinfo[BADGE_MAX_LUMPS];
+
 static void ExtendLumpInfo(int newnumlumps)
 {
-    lumpinfo_t *newlumpinfo;
-    unsigned int i;
-
-    newlumpinfo = calloc(newnumlumps, sizeof(lumpinfo_t));
-
-    if (newlumpinfo == NULL)
+    if (newnumlumps > BADGE_MAX_LUMPS)
     {
-	I_Error ("Couldn't realloc lumpinfo");
+        I_Error("WAD has %d lumps; this build is sized for %d",
+                newnumlumps, BADGE_MAX_LUMPS);
     }
 
-    // Copy over lumpinfo_t structures from the old array. If any of
-    // these lumps have been cached, we need to update the user
-    // pointers to the new location.
-    for (i = 0; i < numlumps && i < newnumlumps; ++i)
-    {
-        memcpy(&newlumpinfo[i], &lumpinfo[i], sizeof(lumpinfo_t));
-
-        if (newlumpinfo[i].cache != NULL)
-        {
-            Z_ChangeUser(newlumpinfo[i].cache, &newlumpinfo[i].cache);
-        }
-
-        // We shouldn't be generating a hash table until after all WADs have
-        // been loaded, but just in case...
-        if (lumpinfo[i].next != NULL)
-        {
-            int nextlumpnum = lumpinfo[i].next - lumpinfo;
-            newlumpinfo[i].next = &newlumpinfo[nextlumpnum];
-        }
-    }
-
-    // All done.
-    free(lumpinfo);
-    lumpinfo = newlumpinfo;
+    lumpinfo = badge_lumpinfo;
     numlumps = newnumlumps;
 }
 

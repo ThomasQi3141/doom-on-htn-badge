@@ -45,7 +45,11 @@ planefunction_t		ceilingfunc;
 // Upstream's 128 visplanes cost 664 bytes each -- 84,992 bytes, a quarter of
 // this board's entire DRAM. 32 covers ordinary Doom scenes; busy ones will hit
 // the limit, which is why R_FindPlane must degrade instead of calling I_Error.
-#define MAXVISPLANES	12
+// Each visplane is 664 bytes. Real Doom geometry needs far more of them than
+// a single test room does -- E1M1's opening area overflowed 12 immediately.
+// 24 rather than 32: overflow now degrades instead of aborting, so the limit
+// only has to be good enough for the common case, not every case.
+#define MAXVISPLANES	24
 visplane_t		visplanes[MAXVISPLANES];
 visplane_t*		lastvisplane;
 visplane_t*		floorplane;
@@ -240,7 +244,13 @@ R_FindPlane
 	return check;
 		
     if (lastvisplane - visplanes == MAXVISPLANES)
-	I_Error ("R_FindPlane: no more visplanes");
+    {
+	// Vanilla aborts here. With only MAXVISPLANES planes on a board this
+	// small, a busy view would take the whole badge down mid-demo. Reusing
+	// the last plane draws that floor or ceiling with the wrong flat for a
+	// frame instead, which is a blemish rather than a reboot.
+	return lastvisplane - 1;
+    }
 		
     lastvisplane++;
 
