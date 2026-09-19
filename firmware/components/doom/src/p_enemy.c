@@ -1915,7 +1915,7 @@ void A_BrainSpit (mobj_t*	mo)
     newmobj = P_SpawnMissile (mo, targ, MT_SPAWNSHOT);
     newmobj->target = targ;
     newmobj->reactiontime =
-	((targ->y - mo->y)/newmobj->momy) / newmobj->state->tics;
+	((targ->y - mo->y)/newmobj->momy) / P_StateTics(newmobj->state);
 
     S_StartSound(NULL, sfx_bospit);
 }

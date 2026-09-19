@@ -1809,18 +1809,19 @@ G_InitNew
     else
 	respawnmonsters = false;
 
-    if (fastparm || (skill == sk_nightmare && gameskill != sk_nightmare) )
+    // states[] is in flash now, so the demon-speed shift is applied when the
+    // tics are read (see P_StateTics) rather than by rewriting the table.
+    // mobjinfo stays in RAM, so those writes are unchanged.
+    fast_monsters = (fastparm || skill == sk_nightmare);
+
+    if (fast_monsters)
     {
-	for (i=S_SARG_RUN1 ; i<=S_SARG_PAIN2 ; i++)
-	    states[i].tics >>= 1;
 	mobjinfo[MT_BRUISERSHOT].speed = 20*FRACUNIT;
 	mobjinfo[MT_HEADSHOT].speed = 20*FRACUNIT;
 	mobjinfo[MT_TROOPSHOT].speed = 20*FRACUNIT;
     }
-    else if (skill != sk_nightmare && gameskill == sk_nightmare)
+    else
     {
-	for (i=S_SARG_RUN1 ; i<=S_SARG_PAIN2 ; i++)
-	    states[i].tics <<= 1;
 	mobjinfo[MT_BRUISERSHOT].speed = 15*FRACUNIT;
 	mobjinfo[MT_HEADSHOT].speed = 10*FRACUNIT;
 	mobjinfo[MT_TROOPSHOT].speed = 10*FRACUNIT;

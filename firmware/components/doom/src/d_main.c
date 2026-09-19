@@ -1765,12 +1765,15 @@ void D_DoomMain (void)
 
     DEH_printf("M_Init: Init miscellaneous info.\n");
     M_Init ();
+    printf("  [zone] %d free after M_Init\n", Z_FreeMemory());
 
     DEH_printf("R_Init: Init DOOM refresh daemon - ");
     R_Init ();
+    printf("  [zone] %d free after R_Init\n", Z_FreeMemory());
 
     DEH_printf("\nP_Init: Init Playloop state.\n");
     P_Init ();
+    printf("  [zone] %d free after P_Init\n", Z_FreeMemory());
 
     DEH_printf("S_Init: Setting up sound.\n");
     S_Init (sfxVolume * 8, musicVolume * 8);
@@ -1782,9 +1785,11 @@ void D_DoomMain (void)
 
     DEH_printf("HU_Init: Setting up heads up display.\n");
     HU_Init ();
+    printf("  [zone] %d free after HU_Init\n", Z_FreeMemory());
 
     DEH_printf("ST_Init: Init status bar.\n");
     ST_Init ();
+    printf("  [zone] %d free after ST_Init\n", Z_FreeMemory());
 
     // If Doom II without a MAP01 lump, this is a store demo.
     // Moved this here so that MAP01 isn't constantly looked up

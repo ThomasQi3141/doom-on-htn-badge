@@ -21,6 +21,8 @@
 #ifndef __INFO__
 #define __INFO__
 
+#include "doomtype.h"
+
 // Needed for action function pointer handling.
 #include "d_think.h"
 
@@ -1153,7 +1155,20 @@ typedef struct
     int misc2;
 } state_t;
 
-extern state_t states[NUMSTATES];
+extern const state_t states[NUMSTATES];
+
+// True on Nightmare or with -fast. Doom expresses "fast monsters" partly by
+// halving a range of demon/spectre state durations; states[] lives in flash, so
+// that shift happens here on read instead of being baked into the table.
+extern boolean fast_monsters;
+
+static inline int P_StateTics(const state_t *st)
+{
+    int t = st->tics;
+    if (fast_monsters && st >= &states[S_SARG_RUN1] && st <= &states[S_SARG_PAIN2])
+        return t >> 1;
+    return t;
+}
 extern char *sprnames[];
 
 typedef enum {

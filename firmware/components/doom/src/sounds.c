@@ -31,7 +31,8 @@
 #define MUSIC(name) \
     { name, 0, NULL, NULL }
 
-musicinfo_t S_music[] =
+// In flash: with no speaker on the board these are pure reference data.
+const musicinfo_t S_music[] =
 {
     MUSIC(NULL),
     MUSIC("e1m1"),
@@ -113,7 +114,7 @@ musicinfo_t S_music[] =
 #define SOUND_LINK(name, priority, link_id, pitch, volume) \
   { NULL, name, priority, &S_sfx[link_id], pitch, volume, 0, 0, -1, NULL }
 
-sfxinfo_t S_sfx[] =
+const sfxinfo_t S_sfx[] =
 {
   // S_sfx[0] needs to be a dummy for odd reasons.
   SOUND("none",   0),

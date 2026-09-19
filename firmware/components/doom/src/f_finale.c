@@ -342,7 +342,7 @@ void F_StartCast (void)
     wipegamestate = -1;		// force a screen wipe
     castnum = 0;
     caststate = &states[mobjinfo[castorder[castnum].type].seestate];
-    casttics = caststate->tics;
+    casttics = P_StateTics(caststate);
     castdeath = false;
     finalestage = F_STAGE_CAST;
     castframes = 0;
@@ -363,7 +363,7 @@ void F_CastTicker (void)
     if (--casttics > 0)
 	return;			// not time to change state yet
 		
-    if (caststate->tics == -1 || caststate->nextstate == S_NULL)
+    if (P_StateTics(caststate) == -1 || caststate->nextstate == S_NULL)
     {
 	// switch from deathstate to next monster
 	castnum++;
@@ -452,7 +452,7 @@ void F_CastTicker (void)
 	}
     }
 	
-    casttics = caststate->tics;
+    casttics = P_StateTics(caststate);
     if (casttics == -1)
 	casttics = 15;
 }
@@ -473,7 +473,7 @@ boolean F_CastResponder (event_t* ev)
     // go into death frame
     castdeath = true;
     caststate = &states[mobjinfo[castorder[castnum].type].deathstate];
-    casttics = caststate->tics;
+    casttics = P_StateTics(caststate);
     castframes = 0;
     castattacking = false;
     if (mobjinfo[castorder[castnum].type].deathsound)

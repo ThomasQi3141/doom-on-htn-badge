@@ -137,7 +137,9 @@ void S_Init(int sfxVolume, int musicVolume)
     // Note that sounds have not been cached (yet).
     for (i=1 ; i<NUMSFX ; i++)
     {
-        S_sfx[i].lumpnum = S_sfx[i].usefulness = -1;
+        // S_sfx is in flash and there is nothing to play it through; the
+        // fields this used to prime are only read by the mixer.
+        (void)i;
     }
 
     I_AtExit(S_Shutdown, true);

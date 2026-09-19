@@ -23,10 +23,10 @@
 #include "i_sound.h"
 
 // the complete set of sound effects
-extern sfxinfo_t	S_sfx[];
+extern const sfxinfo_t	S_sfx[];
 
 // the complete set of music
-extern musicinfo_t	S_music[];
+extern const musicinfo_t	S_music[];
 
 //
 // Identifiers for all music in game.

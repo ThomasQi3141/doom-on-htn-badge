@@ -111,7 +111,9 @@ void I_Tactile(int on, int off, int total)
 //
 // So: grab the largest block, then check what contiguous space survives. If the
 // lump directory would not fit, give it back and try smaller.
-#define BADGE_LUMPINFO_HEADROOM (36 * 1024)
+// 1137 lumps x 24 bytes of lumpinfo_t is 27,288, so 30 KB covers the
+// directory with a little room and hands the rest to the zone.
+#define BADGE_LUMPINFO_HEADROOM (30 * 1024)
 
 static byte *AutoAllocMemory(int *size, int default_ram, int min_ram)
 {

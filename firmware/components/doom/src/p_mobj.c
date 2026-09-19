@@ -62,7 +62,7 @@ P_SetMobjState
 
 	st = &states[state];
 	mobj->state = st;
-	mobj->tics = st->tics;
+	mobj->tics = P_StateTics(st);
 	mobj->sprite = st->sprite;
 	mobj->frame = st->frame;
 
@@ -535,7 +535,7 @@ P_SpawnMobj
     st = &states[info->spawnstate];
 
     mobj->state = st;
-    mobj->tics = st->tics;
+    mobj->tics = P_StateTics(st);
     mobj->sprite = st->sprite;
     mobj->frame = st->frame;
 

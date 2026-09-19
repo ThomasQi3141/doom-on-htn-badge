@@ -124,12 +124,17 @@ void A_SpawnFly();
 void A_BrainExplode();
 
 
-// 27,076 bytes, and all but a handful of it is read-only at runtime. It cannot
-// simply be made const and moved to flash: G_SetFastParms halves .tics across
-// S_SARG_RUN1..S_SARG_PAIN2 for Nightmare and -fast. Moving it would mean
-// either dropping fast demons or adding a RAM overlay consulted by
-// P_SetMobjState, which is a hot path. See PORT-PLAN.md.
-state_t	states[NUMSTATES] = {
+// 27,076 bytes, now in flash rather than DRAM.
+//
+// The one thing that stopped this being const is that Nightmare and -fast halve
+// .tics across S_SARG_RUN1..S_SARG_PAIN2. Those were the only two writes to the
+// table in the whole engine, and every read goes through a state_t*, so the
+// shift is applied on read via P_StateTics() instead of mutating the table.
+// Gameplay is unchanged -- arguably more correct, since the original only
+// applied the shift on a skill *transition*.
+boolean fast_monsters = false;
+
+const state_t	states[NUMSTATES] = {
     {SPR_TROO,0,-1,{NULL},S_NULL,0,0},	// S_NULL
     {SPR_SHTG,4,0,{A_Light0},S_NULL,0,0},	// S_LIGHTDONE
     {SPR_PUNG,0,1,{A_WeaponReady},S_PUNCH,0,0},	// S_PUNCH
