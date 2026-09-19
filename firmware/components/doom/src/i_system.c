@@ -48,6 +48,7 @@
 
 #include "i_system.h"
 #include "esp_heap_caps.h"
+#include "esp_attr.h"
 
 #include "w_wad.h"
 #include "z_zone.h"
@@ -115,39 +116,43 @@ void I_Tactile(int on, int off, int total)
 // the incidental mallocs -- config strings and the like.
 #define BADGE_LUMPINFO_HEADROOM (10 * 1024)
 
+// Upstream asks for 6 MiB and refuses to start below that. This board has a
+// few hundred KB, split across three disjoint heap regions, so the zone is
+// bounded by the largest contiguous block rather than by total free memory.
+//
+// This used to step down in 4 KB increments until "largest free block" looked
+// healthy. That metric cannot tell which region shrank, so every time an
+// unrelated array grew the loop overshot and handed the zone a fraction of
+// what was available -- three separate debugging rounds came from it. The lump
+// directory is static now and nothing else large is allocated after Z_Init, so
+// a fixed reserve is both simpler and predictable.
+#define BADGE_ZONE_RESERVE (12 * 1024)
+
 static byte *AutoAllocMemory(int *size, int default_ram, int min_ram)
 {
     (void)default_ram;
     (void)min_ram;
 
-    size_t want = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-    byte *zonemem = NULL;
+    size_t largest = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
+    size_t want = (largest > BADGE_ZONE_RESERVE) ? largest - BADGE_ZONE_RESERVE : 0;
 
-    while (want >= 16 * 1024)
+    byte *zonemem = NULL;
+    while (want >= 32 * 1024)
     {
         zonemem = heap_caps_malloc(want, MALLOC_CAP_8BIT);
-        if (zonemem != NULL)
-        {
-            size_t left = heap_caps_get_largest_free_block(MALLOC_CAP_8BIT);
-            if (left >= BADGE_LUMPINFO_HEADROOM)
-                break;                    // the lump directory still has a home
-
-            free(zonemem);
-            zonemem = NULL;
-        }
-        want -= 4 * 1024;
+        if (zonemem != NULL) break;
+        want -= 4 * 1024;          // only for alignment slop, not for tuning
     }
 
     if (zonemem == NULL)
-        I_Error("no zone heap: %u free, %u contiguous, need %u left over",
+        I_Error("no zone heap: %u free, %u contiguous",
                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT),
-                (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT),
-                (unsigned)BADGE_LUMPINFO_HEADROOM);
+                (unsigned)largest);
 
     *size = (int)want;
-    printf("zone: %u bytes, %u contiguous left for everything else\n",
-           (unsigned)want,
-           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    printf("zone: %u bytes (largest block was %u, %u left over)\n",
+           (unsigned)want, (unsigned)largest,
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT));
     return zonemem;
 }
 
@@ -377,6 +382,24 @@ static int ZenityErrorBox(char *message)
 
 static boolean already_quitting = false;
 
+// Survives a software reset, so the reason for a crash is still readable on
+// the next boot. Chasing an intermittent fault by trying to be attached to the
+// serial port at the right moment does not work; this removes the timing.
+#define BADGE_CRASH_MAGIC 0xD00D1E5Bu
+RTC_NOINIT_ATTR static uint32_t badge_crash_magic;
+RTC_NOINIT_ATTR static char     badge_crash_msg[192];
+
+void I_ReportLastCrash(void)
+{
+    if (badge_crash_magic == BADGE_CRASH_MAGIC)
+    {
+        badge_crash_msg[sizeof(badge_crash_msg) - 1] = 0;
+        // Deliberately not cleared: a crash that happens while nobody is
+        // attached to the serial port must still be readable later.
+        printf("\n*** last recorded I_Error: %s ***\n\n", badge_crash_msg);
+    }
+}
+
 void I_Error (char *error, ...)
 {
     char msgbuf[512];
@@ -403,6 +426,15 @@ void I_Error (char *error, ...)
     fprintf(stderr, "\n\n");
     va_end(argptr);
     fflush(stderr);
+
+    // Stash it where the next boot can find it.
+    {
+        va_list ap2;
+        va_start(ap2, error);
+        vsnprintf(badge_crash_msg, sizeof(badge_crash_msg), error, ap2);
+        va_end(ap2);
+        badge_crash_magic = BADGE_CRASH_MAGIC;
+    }
 
     // Write a copy of the message into buffer.
     va_start(argptr, error);

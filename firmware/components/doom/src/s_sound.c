@@ -179,7 +179,9 @@ static void S_StopChannel(int cnum)
         
         // degrade usefulness of sound data
 
-        c->sfxinfo->usefulness--;
+        // usefulness lives in S_sfx, which is in read-only flash; writing it
+
+        // is a store access fault, and nothing reads it without a mixer.
         c->sfxinfo = NULL;
     }
 }

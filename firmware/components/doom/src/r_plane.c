@@ -47,9 +47,10 @@ planefunction_t		ceilingfunc;
 // the limit, which is why R_FindPlane must degrade instead of calling I_Error.
 // Each visplane is 664 bytes. Real Doom geometry needs far more of them than
 // a single test room does -- E1M1's opening area overflowed 12 immediately.
-// 24 rather than 32: overflow now degrades instead of aborting, so the limit
-// only has to be good enough for the common case, not every case.
-#define MAXVISPLANES	24
+// Real Doom geometry overflowed 24 in ordinary play. Both creation sites are
+// bounded now, so going over is a merged floor for one frame rather than a
+// crash -- but the limit should still cover the common case.
+#define MAXVISPLANES	32
 visplane_t		visplanes[MAXVISPLANES];
 visplane_t*		lastvisplane;
 visplane_t*		floorplane;
@@ -317,6 +318,21 @@ R_CheckPlane
     }
 	
     // make a new visplane
+    //
+    // Vanilla does not bounds-check here at all -- it simply writes past the
+    // end of the array, 664 bytes at a time, into whatever .bss follows. On a
+    // desktop with MAXVISPLANES 128 that rarely bit; at 24 it corrupts memory
+    // within seconds and the damage surfaces far from the cause.
+    if (lastvisplane - visplanes >= MAXVISPLANES)
+    {
+	// Out of planes: keep drawing into the one we have. The floor or
+	// ceiling is merged with its neighbour for a frame, which is a visual
+	// blemish, not a reboot.
+	pl->minx = unionl;
+	pl->maxx = unionh;
+	return pl;
+    }
+
     lastvisplane->height = pl->height;
     lastvisplane->picnum = pl->picnum;
     lastvisplane->lightlevel = pl->lightlevel;
@@ -386,8 +402,12 @@ void R_DrawPlanes (void)
 		 ds_p - drawsegs);
     
     if (lastvisplane - visplanes > MAXVISPLANES)
-	I_Error ("R_DrawPlanes: visplane overflow (%i)",
-		 lastvisplane - visplanes);
+    {
+	// Should be unreachable now that both creation sites are bounded.
+	// Clamping rather than aborting means a miscount costs a frame, not
+	// the whole device.
+	lastvisplane = &visplanes[MAXVISPLANES];
+    }
     
     if (lastopening - openings > MAXOPENINGS)
 	I_Error ("R_DrawPlanes: opening overflow (%i)",

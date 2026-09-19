@@ -125,6 +125,7 @@ void DG_Init(void)
 
 extern int gametic;
 int I_GetTime(void);
+int Z_FreeMemory(void);
 
 void DG_DrawFrame(void)
 {
@@ -138,9 +139,12 @@ void DG_DrawFrame(void)
     if (++frames % 60 == 0)
     {
         int64_t now = esp_timer_get_time();
-        ESP_LOGI(TAG, "frame %d: %.1f fps, gametic %d, I_GetTime %d, buttons 0x%03x",
+        // Zone free is in here because a crash that only happens "after a
+        // while" is usually memory filling up, and that is visible before the
+        // failure rather than only at it.
+        ESP_LOGI(TAG, "frame %d: %.1f fps, gametic %d, zone free %d, buttons 0x%03x",
                  frames, 60.0 / ((now - t0) / 1000000.0),
-                 gametic, I_GetTime(), buttons_read());
+                 gametic, Z_FreeMemory(), buttons_read());
         t0 = now;
     }
 }

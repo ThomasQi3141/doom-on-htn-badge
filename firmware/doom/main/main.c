@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
+#include "esp_system.h"
 
 #include "badge_pins.h"
 #include "display.h"
@@ -24,6 +25,7 @@ static const char *TAG = "doom";
 extern int myargc;
 extern char **myargv;
 void D_DoomMain(void);
+void I_ReportLastCrash(void);
 void DG_Init(void);
 void doomgeneric_Tick(void);
 
@@ -38,7 +40,18 @@ static void report_memory(const char *when)
 
 void app_main(void)
 {
+    // Unbuffered: a hang or a hard reset does not flush stdout the way abort()
+    // does, so a buffered I_Error message dies with the process and the crash
+    // looks like it had no cause at all. This has cost two debugging rounds.
+    setvbuf(stdout, NULL, _IONBF, 0);
+
     ESP_LOGI(TAG, "=== Doom on the badge ===");
+
+    // Why did we start? A panic and a clean boot look identical otherwise,
+    // and an I_Error and a hard fault need completely different hunting.
+    ESP_LOGI(TAG, "reset reason: %d  (1=power-on 3=sw 4=panic 5=int-wdt 6=task-wdt 7=wdt)",
+             (int)esp_reset_reason());
+    I_ReportLastCrash();
     report_memory("boot");
 
     buttons_init();
