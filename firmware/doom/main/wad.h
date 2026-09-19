@@ -29,6 +29,10 @@ const char *wad_id(void);
 // against the 8-byte field, as Doom itself does.
 bool wad_find(const char *name, wad_lump_t *out);
 
+// Directory order, which is what tells a level apart from the lumps that belong
+// to it: a map marker is followed by its THINGS, LINEDEFS and so on.
+bool wad_lump_at(int index, wad_lump_t *out);
+
 // Draws a patch into an 8bpp buffer at (x, y), honouring transparency.
 void wad_draw_patch(const patch_t *p, uint8_t *dst, int dst_w, int dst_h,
                     int x, int y);

@@ -86,6 +86,32 @@ void app_main(void)
         return;
     }
 
+    // Prove the actual game data is present, not just the art we packed by hand.
+    int maps = 0;
+    uint32_t level_bytes = 0;
+    for (int i = 0; i < wad_num_lumps(); i++) {
+        wad_lump_t l;
+        if (!wad_lump_at(i, &l)) break;
+        if (l.name[0] == 'E' && l.name[2] == 'M' &&
+            l.name[1] >= '1' && l.name[1] <= '9' &&
+            l.name[3] >= '1' && l.name[3] <= '9') {
+            char nm[9] = {0};
+            memcpy(nm, l.name, 8);
+            // A map marker is a zero-length lump; its data follows it.
+            wad_lump_t things, lines, sectors;
+            uint32_t sz = 0;
+            for (int j = i + 1; j < i + 11 && wad_lump_at(j, &things); j++)
+                sz += things.size;
+            level_bytes += sz;
+            if (maps < 3 || maps == 8)
+                ESP_LOGI(TAG, "  level %-8s %u bytes across its 10 lumps", nm, (unsigned)sz);
+            maps++;
+            (void)lines; (void)sectors;
+        }
+    }
+    ESP_LOGI(TAG, "%d levels present, %u bytes of level data total",
+             maps, (unsigned)level_bytes);
+
     wad_lump_t pal;
     if (!wad_find("PLAYPAL", &pal)) {
         ESP_LOGE(TAG, "WAD has no PLAYPAL, cannot build a palette");

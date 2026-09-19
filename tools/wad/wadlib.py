@@ -76,3 +76,31 @@ def build_wad(lumps):
         pos += len(data)
     return struct.pack("<4sii", b"IWAD", len(lumps), header + len(body)) \
         + body + directory
+
+
+AUDIO_PREFIXES = ("D_", "DS", "DP")
+DROPPABLE = {"ENDOOM", "DEMO1", "DEMO2", "DEMO3", "DEMO4"}
+
+
+def is_audio(name):
+    u = name.upper()
+    return u.startswith(AUDIO_PREFIXES)
+
+
+def strip_wad(wad, drop_audio=True, drop_extras=True):
+    """Return (name, data) pairs with the badge's dead weight removed.
+
+    The board has no speaker, amp or DAC, so every sound, every piece of music
+    and every PC-speaker lump is unreachable code's unreachable data. ENDOOM is
+    the DOS text screen shown on exit and the demos are attract-mode playback,
+    neither of which a badge build needs.
+    """
+    out = []
+    for name, pos, size in wad.lumps:
+        u = name.upper()
+        if drop_audio and is_audio(u):
+            continue
+        if drop_extras and u in DROPPABLE:
+            continue
+        out.append((name, wad.data[pos:pos + size]))
+    return out

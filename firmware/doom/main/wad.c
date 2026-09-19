@@ -87,6 +87,15 @@ bool wad_find(const char *name, wad_lump_t *out)
     return false;
 }
 
+bool wad_lump_at(int index, wad_lump_t *out)
+{
+    if (index < 0 || index >= s_numlumps) return false;
+    out->name = s_dir[index].name;
+    out->data = s_base + s_dir[index].filepos;
+    out->size = s_dir[index].size;
+    return true;
+}
+
 void wad_draw_patch(const patch_t *p, uint8_t *dst, int dst_w, int dst_h,
                     int x, int y)
 {

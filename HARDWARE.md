@@ -186,3 +186,38 @@ roughly 3 MB for WAD data — comfortably more than rp2040-doom needs.
 ### eFuses
 Secure Boot **disabled**, Flash Encryption **disabled**, `SPI_BOOT_CRYPT_CNT` 0.
 Custom firmware runs. Chip is ESP32-C3 rev v0.4, MAC `e8:3d:c1:20:cf:cc`.
+
+## The flash budget, and why no WAD recompression is needed
+
+The raw shareware `DOOM1.WAD` is 4,196,020 bytes — larger than the badge's
+entire 4 MB flash. But the board has **no speaker, amp or DAC**, so every sound
+and every piece of music is data for code that can never run:
+
+| category | bytes | share |
+|---|---|---|
+| levels | 848,149 | 20.2% |
+| sprites | 825,576 | 19.7% |
+| wall patches | 763,612 | 18.2% |
+| UI graphics | 698,180 | 16.6% |
+| **sound effects** | **535,127** | **12.8%** |
+| **music** | **245,179** | **5.8%** |
+| flats | 221,184 | 5.3% |
+| core tables | 31,494 | 0.8% |
+| ENDOOM | 4,000 | 0.1% |
+| **PC speaker** | **3,055** | **0.1%** |
+
+Dropping all audio, ENDOOM and the attract-mode demos leaves **3,362,373 bytes**
+across 1137 lumps. With the app partition at 640 KB, the WAD partition is
+3,473,408 bytes — so **the entire shareware episode fits uncompressed, with
+111 KB to spare.**
+
+This removes the single largest piece of work rp2040-doom had to do. That port
+needed a bespoke recompressed WAD format because it was squeezing into 2 MB
+total. We have twice the flash and a silent board, so the data problem is simply
+gone. Verified on hardware: all 9 levels present, 848,149 bytes of level data.
+
+**The remaining hard problem is RAM, not flash.**
+
+## Escape hatch
+If the Doom binary outgrows 640 KB, dropping `HELP1` and `CREDIT` (68,168 bytes
+each) frees 136 KB of WAD, paying for a 768 KB app partition.
