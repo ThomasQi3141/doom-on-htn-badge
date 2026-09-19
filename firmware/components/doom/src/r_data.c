@@ -223,6 +223,8 @@ R_DrawColumnInCache
 //  the composite texture is created from the patches,
 //  and each column is cached.
 //
+static void R_EnsureLookup (int texnum);
+
 void R_GenerateComposite (int texnum)
 {
     byte*		block;
@@ -237,6 +239,8 @@ void R_GenerateComposite (int texnum)
     short*		collump;
     unsigned short*	colofs;
 	
+    R_EnsureLookup (texnum);
+
     texture = textures[texnum];
 
     block = Z_Malloc (texturecompositesize[texnum],
@@ -377,6 +381,26 @@ void R_GenerateLookup (int texnum)
 
 
 //
+// Build a texture's column lookup the first time something draws with it.
+//
+static void R_EnsureLookup (int texnum)
+{
+    texture_t *texture;
+
+    if (texturecolumnlump[texnum] != NULL)
+	return;
+
+    texture = textures[texnum];
+    texturecolumnlump[texnum] =
+	Z_Malloc (texture->width*sizeof(**texturecolumnlump), PU_STATIC, 0);
+    texturecolumnofs[texnum] =
+	Z_Malloc (texture->width*sizeof(**texturecolumnofs), PU_STATIC, 0);
+
+    R_GenerateLookup (texnum);
+}
+
+
+//
 // R_GetColumn
 //
 byte*
@@ -387,6 +411,8 @@ R_GetColumn
     int		lump;
     int		ofs;
 	
+    R_EnsureLookup (tex);
+
     col &= texturewidthmask[tex];
     lump = texturecolumnlump[tex][col];
     ofs = texturecolumnofs[tex][col];
@@ -592,8 +618,11 @@ void R_InitTextures (void)
 			 texture->name);
 	    }
 	}		
-	texturecolumnlump[i] = Z_Malloc (texture->width*sizeof(**texturecolumnlump), PU_STATIC,0);
-	texturecolumnofs[i] = Z_Malloc (texture->width*sizeof(**texturecolumnofs), PU_STATIC,0);
+	// Built on first use instead -- see R_EnsureLookup. Allocating these for
+	// all 125 textures costs 43,104 bytes on this WAD, four per texture
+	// column, and a level only ever draws a fraction of them.
+	texturecolumnlump[i] = NULL;
+	texturecolumnofs[i] = NULL;
 
 	j = 1;
 	while (j*2 <= texture->width)
@@ -611,10 +640,9 @@ void R_InitTextures (void)
     if (maptex2)
         W_ReleaseLumpName(DEH_String("TEXTURE2"));
     
-    // Precalculate whatever possible.	
-
-    for (i=0 ; i<numtextures ; i++)
-	R_GenerateLookup (i);
+    // Upstream precalculates every lookup here. On a board with an 82 KB zone
+    // that is 43 KB spent before the first level is even chosen, most of it on
+    // textures the level never references, so it is deferred to R_EnsureLookup.
     
     // Create translation table for global animation.
     texturetranslation = Z_Malloc ((numtextures+1)*sizeof(*texturetranslation), PU_STATIC, 0);

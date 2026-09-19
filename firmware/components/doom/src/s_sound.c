@@ -632,6 +632,13 @@ void S_ChangeMusic(int musicnum, int looping)
     // shutdown old music
     S_StopMusic();
 
+    // Everything below needs a music lump. The badge has no speaker, amp or
+    // DAC, so the WAD was built without any -- and W_GetNumForName calls
+    // I_Error on a miss, which is what "d_intro not found" was. Nothing past
+    // this point could make a sound even if the lump existed.
+    mus_playing = NULL;
+    return;
+
     // get lumpnum if neccessary
     if (!music->lumpnum)
     {
