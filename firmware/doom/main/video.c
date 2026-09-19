@@ -37,6 +37,9 @@ bool video_init(void)
     ESP_LOGI(TAG, "framebuffer %d bytes at %p, %d DMA chunks of %d bytes",
              DOOM_W * DOOM_H, s_fb, DISPLAY_SLOTS,
              DOOM_W * CHUNK_ROWS * (int)sizeof(uint16_t));
+    ESP_LOGI(TAG, "output %dx%d, %s", DOOM_W, VIDEO_OUT_H,
+             VIDEO_ASPECT_CORRECT ? "aspect-corrected 1.2x, fills the panel"
+                                  : "letterboxed with black bands");
     return true;
 }
 
@@ -68,20 +71,34 @@ uint32_t video_fb_hash(void)
     return h;
 }
 
+// Source row feeding a given output row. With aspect correction this is the
+// exact 5/6 ratio; without it the mapping is one to one.
+static inline int src_row_for(int out_y)
+{
+#if VIDEO_ASPECT_CORRECT
+    return (out_y * DOOM_H) / VIDEO_OUT_H;   // *5/6, integer exact
+#else
+    return out_y;
+#endif
+}
+
 void video_present(void)
 {
-    display_set_window(0, DOOM_Y_OFFSET, DOOM_W, DOOM_H);
+    display_set_window(0, DOOM_Y_OFFSET, DOOM_W, VIDEO_OUT_H);
 
     int slot = 0;
-    for (int y = 0; y < DOOM_H; y += CHUNK_ROWS) {
-        int rows = (y + CHUNK_ROWS <= DOOM_H) ? CHUNK_ROWS : (DOOM_H - y);
+    for (int y = 0; y < VIDEO_OUT_H; y += CHUNK_ROWS) {
+        int rows = (y + CHUNK_ROWS <= VIDEO_OUT_H) ? CHUNK_ROWS : (VIDEO_OUT_H - y);
 
         // Reusing this slot's buffer means waiting for its previous DMA first.
         display_wait_slot(slot);
 
-        const uint8_t *src = s_fb + (size_t)y * DOOM_W;
         uint16_t *dst = s_chunk[slot];
-        for (int i = 0; i < rows * DOOM_W; i++) dst[i] = s_pal[src[i]];
+        for (int r = 0; r < rows; r++) {
+            const uint8_t *src = s_fb + (size_t)src_row_for(y + r) * DOOM_W;
+            uint16_t *out = dst + (size_t)r * DOOM_W;
+            for (int x = 0; x < DOOM_W; x++) out[x] = s_pal[src[x]];
+        }
 
         display_queue(slot, dst, (size_t)rows * DOOM_W);
         slot ^= 1;
@@ -91,12 +108,15 @@ void video_present(void)
 
 void video_present_sync(void)
 {
-    display_set_window(0, DOOM_Y_OFFSET, DOOM_W, DOOM_H);
-    for (int y = 0; y < DOOM_H; y += CHUNK_ROWS) {
-        int rows = (y + CHUNK_ROWS <= DOOM_H) ? CHUNK_ROWS : (DOOM_H - y);
-        const uint8_t *src = s_fb + (size_t)y * DOOM_W;
+    display_set_window(0, DOOM_Y_OFFSET, DOOM_W, VIDEO_OUT_H);
+    for (int y = 0; y < VIDEO_OUT_H; y += CHUNK_ROWS) {
+        int rows = (y + CHUNK_ROWS <= VIDEO_OUT_H) ? CHUNK_ROWS : (VIDEO_OUT_H - y);
         uint16_t *dst = s_chunk[0];
-        for (int i = 0; i < rows * DOOM_W; i++) dst[i] = s_pal[src[i]];
+        for (int r = 0; r < rows; r++) {
+            const uint8_t *src = s_fb + (size_t)src_row_for(y + r) * DOOM_W;
+            uint16_t *out = dst + (size_t)r * DOOM_W;
+            for (int x = 0; x < DOOM_W; x++) out[x] = s_pal[src[x]];
+        }
         display_write_pixels(dst, (size_t)rows * DOOM_W);
     }
     display_end_frame();

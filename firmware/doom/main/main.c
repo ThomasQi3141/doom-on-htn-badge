@@ -95,8 +95,14 @@ void app_main(void)
             for (int x = 0; x < DOOM_W; x++)
                 fb[y * DOOM_W + x] = (uint8_t)(x * 256 / DOOM_W);
 
-        ESP_LOGI(TAG, "=== display diagnostic: press START to skip to Doom ===");
-        bool skip = false;
+        // Colours are confirmed working, so the diagnostic is opt-in now:
+        // hold B at boot to walk the display layers again.
+        bool skip = !(buttons_read() & (1u << BADGE_BTN_B));
+        if (skip) {
+            ESP_LOGI(TAG, "display diagnostic skipped (hold B at boot to run it)");
+        } else {
+            ESP_LOGI(TAG, "=== display diagnostic: press START to leave it ===");
+        }
         while (!skip) {
             const struct { const char *label; uint16_t color; } fills[] = {
                 { "A: solid RED",   0x00F8 },

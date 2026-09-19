@@ -9,8 +9,26 @@
 #define DOOM_W 320
 #define DOOM_H 200
 
-// Vertical letterbox: 200 rows centred on a 240-row panel.
-#define DOOM_Y_OFFSET ((240 - DOOM_H) / 2)
+#define PANEL_H 240
+
+// Doom's 320x200 was drawn for 4:3 monitors with non-square pixels, so it is
+// meant to be stretched vertically by 1.2x. 200 * 1.2 is exactly 240, the
+// panel's height -- so aspect correction and filling the screen are the same
+// operation, and the ratio is exactly 6 destination rows per 5 source rows.
+//
+// 1 = scale to the full 240 rows (correct aspect, no borders, 20% more SPI)
+// 0 = letterbox 200 rows with black bands
+#ifndef VIDEO_ASPECT_CORRECT
+#define VIDEO_ASPECT_CORRECT 1
+#endif
+
+#if VIDEO_ASPECT_CORRECT
+#define VIDEO_OUT_H   PANEL_H
+#define DOOM_Y_OFFSET 0
+#else
+#define VIDEO_OUT_H   DOOM_H
+#define DOOM_Y_OFFSET ((PANEL_H - DOOM_H) / 2)
+#endif
 
 bool video_init(void);
 
