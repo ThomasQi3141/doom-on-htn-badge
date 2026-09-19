@@ -203,6 +203,10 @@ FILLER_TYPES = {2014, 2015, 2011, 2012, 2007, 2008, 2028, 15, 18, 20, 21, 2035}
 # Everything here has sprites in the shareware IWAD. Cacodemons and the rest
 # of the bestiary are episode 2+, so their sprites are absent and spawning one
 # aborts in R_InitSprites.
+# An even mix. These will fight each other as well as the player -- Doom
+# monsters retaliate against whatever damaged them (p_inter.c: "target->target
+# = source"), and a ring of them around the player means plenty of crossfire.
+# That is deliberate: the infighting is worth watching.
 ARENA_MONSTERS = [3004,   # zombieman
                   3001,   # imp
                   9,      # shotgun guy
@@ -437,7 +441,7 @@ def carve(m, max_sectors, texremap=None, add_monsters=0, arena=0, tex=None):
 
     if arena:
         n, spots = place_arena(new_things, boundary, verts, lines, start, arena)
-        kinds = min(n, len(ARENA_MONSTERS))
+        kinds = len(set(ARENA_MONSTERS[:n])) if n else 0
         print(f"  arena: {n} monsters of {kinds} types around the player start "
               f"({spots} valid spots found), plus weapons and health")
 
