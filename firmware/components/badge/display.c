@@ -10,6 +10,17 @@
 #include "esp_heap_caps.h"
 
 static const char *TAG = "disp";
+
+// Who drives chip select.
+//
+// 1 = the SPI peripheral, asserting CS per transaction. This is what the panel
+//     was first confirmed working with, and it is what ESP-IDF's own esp_lcd
+//     driver does: CS toggles between queued transactions and the controller
+//     keeps its memory pointer across the gaps during RAMWR.
+// 0 = a plain GPIO held low across an entire frame.
+#ifndef DISPLAY_HW_CS
+#define DISPLAY_HW_CS 1
+#endif
 static spi_device_handle_t s_spi;
 static uint16_t *s_row;                       // one scratch row, DMA-capable
 static spi_transaction_t s_trans[DISPLAY_SLOTS];
@@ -24,8 +35,13 @@ const char *display_variant_name(panel_variant_t v)
     }
 }
 
+#if DISPLAY_HW_CS
+static inline void cs_low(void)  { }
+static inline void cs_high(void) { }
+#else
 static inline void cs_low(void)  { gpio_set_level(PIN_DISP_CS, 0); }
 static inline void cs_high(void) { gpio_set_level(PIN_DISP_CS, 1); }
+#endif
 
 // Callers hold CS themselves; these only move DC and push bytes.
 static void spi_tx(const uint8_t *data, size_t len, bool is_cmd)
@@ -46,11 +62,11 @@ static void cmd_data(uint8_t c, const uint8_t *d, size_t n)
 
 void display_init_bus(void)
 {
-    gpio_config_t io = {
-        .pin_bit_mask = (1ULL << PIN_DISP_DC) | (1ULL << PIN_DISP_RST) |
-                        (1ULL << PIN_DISP_CS),
-        .mode = GPIO_MODE_OUTPUT,
-    };
+    uint64_t out_pins = (1ULL << PIN_DISP_DC) | (1ULL << PIN_DISP_RST);
+#if !DISPLAY_HW_CS
+    out_pins |= (1ULL << PIN_DISP_CS);
+#endif
+    gpio_config_t io = { .pin_bit_mask = out_pins, .mode = GPIO_MODE_OUTPUT };
     ESP_ERROR_CHECK(gpio_config(&io));
     cs_high();
 
@@ -64,11 +80,14 @@ void display_init_bus(void)
     };
     ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &bus, SPI_DMA_CH_AUTO));
 
-    // CS is left to us (-1) so one RAMWR can span many queued transactions.
     spi_device_interface_config_t dev = {
         .clock_speed_hz = DISP_SPI_HZ,
         .mode           = 0,
+#if DISPLAY_HW_CS
+        .spics_io_num   = PIN_DISP_CS,
+#else
         .spics_io_num   = -1,
+#endif
         .queue_size     = DISPLAY_SLOTS + 1,
     };
     ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &dev, &s_spi));
@@ -76,6 +95,8 @@ void display_init_bus(void)
     s_row = heap_caps_malloc(DISP_W * sizeof(uint16_t), MALLOC_CAP_DMA);
     assert(s_row);
 
+    ESP_LOGI(TAG, "chip select driven by %s",
+             DISPLAY_HW_CS ? "the SPI peripheral" : "GPIO, held across a frame");
     ESP_LOGI(TAG, "SPI2 up: sclk=%d mosi=%d cs=%d dc=%d rst=%d @ %d MHz",
              PIN_DISP_SCLK, PIN_DISP_MOSI, PIN_DISP_CS, PIN_DISP_DC,
              PIN_DISP_RST, DISP_SPI_HZ / 1000000);

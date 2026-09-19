@@ -23,6 +23,10 @@ uint8_t *video_framebuffer(void);
 // conversion with DMA so the CPU is not idle during the transfer.
 void video_present(void);
 
+// Same conversion, but pushed with blocking polling transfers instead of queued
+// DMA. Slower, and used to tell a broken async path apart from a broken bus.
+void video_present_sync(void);
+
 void video_clear(uint8_t index);
 
 // FNV-1a over the whole 8bpp framebuffer, so a host-side reference decode of

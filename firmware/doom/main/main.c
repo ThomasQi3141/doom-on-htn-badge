@@ -80,6 +80,59 @@ void app_main(void)
     if (!video_init()) return;
     report_memory("after video_init");
 
+    // The display layer was rewritten for manual CS and overlapped DMA, and
+    // that rewrite was never confirmed by eye. Walk up the layers one at a time
+    // so a dark screen says *which* layer is broken. Loops until START.
+    {
+        uint8_t ramp[768];
+        for (int i = 0; i < 256; i++) {
+            ramp[i * 3 + 0] = (uint8_t)i;
+            ramp[i * 3 + 1] = (uint8_t)i;
+            ramp[i * 3 + 2] = (uint8_t)i;
+        }
+        uint8_t *fb = video_framebuffer();
+        for (int y = 0; y < DOOM_H; y++)
+            for (int x = 0; x < DOOM_W; x++)
+                fb[y * DOOM_W + x] = (uint8_t)(x * 256 / DOOM_W);
+
+        ESP_LOGI(TAG, "=== display diagnostic: press START to skip to Doom ===");
+        bool skip = false;
+        while (!skip) {
+            const struct { const char *label; uint16_t color; } fills[] = {
+                { "A: solid RED",   0x00F8 },
+                { "B: solid GREEN", 0xE007 },
+                { "C: solid BLUE",  0x1F00 },
+            };
+            for (int i = 0; i < 3 && !skip; i++) {
+                ESP_LOGI(TAG, "DIAG %s (polling fill)", fills[i].label);
+                display_fill_rect(0, 0, 320, 240, fills[i].color);
+                for (int t = 0; t < 20 && !skip; t++) {
+                    if (buttons_read() & (1u << BADGE_BTN_START)) skip = true;
+                    vTaskDelay(pdMS_TO_TICKS(100));
+                }
+            }
+            if (skip) break;
+
+            video_set_palette(ramp);
+            ESP_LOGI(TAG, "DIAG D: grey ramp, SYNCHRONOUS push");
+            video_present_sync();
+            for (int t = 0; t < 25 && !skip; t++) {
+                if (buttons_read() & (1u << BADGE_BTN_START)) skip = true;
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+            if (skip) break;
+
+            ESP_LOGI(TAG, "DIAG E: grey ramp, ASYNC queued DMA push");
+            display_fill_rect(0, 0, 320, 240, 0x0000);
+            video_present();
+            for (int t = 0; t < 25 && !skip; t++) {
+                if (buttons_read() & (1u << BADGE_BTN_START)) skip = true;
+                vTaskDelay(pdMS_TO_TICKS(100));
+            }
+        }
+        ESP_LOGI(TAG, "diagnostic skipped, continuing to Doom data");
+    }
+
     if (!wad_mount()) {
         ESP_LOGE(TAG, "no WAD -- flash one with tools/wad/flash-wad.sh");
         display_fill_rect(0, 0, 320, 240, 0x00F8);   // red: nothing to show

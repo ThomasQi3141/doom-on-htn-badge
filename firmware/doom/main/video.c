@@ -88,3 +88,16 @@ void video_present(void)
     }
     display_end_frame();
 }
+
+void video_present_sync(void)
+{
+    display_set_window(0, DOOM_Y_OFFSET, DOOM_W, DOOM_H);
+    for (int y = 0; y < DOOM_H; y += CHUNK_ROWS) {
+        int rows = (y + CHUNK_ROWS <= DOOM_H) ? CHUNK_ROWS : (DOOM_H - y);
+        const uint8_t *src = s_fb + (size_t)y * DOOM_W;
+        uint16_t *dst = s_chunk[0];
+        for (int i = 0; i < rows * DOOM_W; i++) dst[i] = s_pal[src[i]];
+        display_write_pixels(dst, (size_t)rows * DOOM_W);
+    }
+    display_end_frame();
+}
