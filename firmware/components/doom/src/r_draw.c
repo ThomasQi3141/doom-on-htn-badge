@@ -38,8 +38,10 @@
 
 
 // ?
-#define MAXWIDTH			1120
-#define MAXHEIGHT			832
+// Upstream sizes these for the largest display it might ever run on. This
+// panel is 320x240 and Doom renders 320x200, so 1120x832 wastes 5,728 bytes.
+#define MAXWIDTH			SCREENWIDTH
+#define MAXHEIGHT			SCREENHEIGHT
 
 // status bar height at bottom of screen
 #define SBARHEIGHT		32

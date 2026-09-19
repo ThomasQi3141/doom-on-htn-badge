@@ -972,11 +972,11 @@ P_SpawnMissile
 
     th->angle = an;
     an >>= ANGLETOFINESHIFT;
-    th->momx = FixedMul (th->info->speed, finecosine[an]);
-    th->momy = FixedMul (th->info->speed, finesine[an]);
+    th->momx = FixedMul (P_MobjSpeed(th->info), finecosine[an]);
+    th->momy = FixedMul (P_MobjSpeed(th->info), finesine[an]);
 	
     dist = P_AproxDistance (dest->x - source->x, dest->y - source->y);
-    dist = dist / th->info->speed;
+    dist = dist / P_MobjSpeed(th->info);
 
     if (dist < 1)
 	dist = 1;
@@ -1038,11 +1038,11 @@ P_SpawnPlayerMissile
 
     th->target = source;
     th->angle = an;
-    th->momx = FixedMul( th->info->speed,
+    th->momx = FixedMul( P_MobjSpeed(th->info),
 			 finecosine[an>>ANGLETOFINESHIFT]);
-    th->momy = FixedMul( th->info->speed,
+    th->momy = FixedMul( P_MobjSpeed(th->info),
 			 finesine[an>>ANGLETOFINESHIFT]);
-    th->momz = FixedMul( th->info->speed, slope);
+    th->momz = FixedMul( P_MobjSpeed(th->info), slope);
 
     P_CheckMissileSpawn (th);
 }

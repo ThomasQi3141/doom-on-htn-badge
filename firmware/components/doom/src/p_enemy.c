@@ -275,8 +275,8 @@ boolean P_Move (mobj_t*	actor)
     if ((unsigned)actor->movedir >= 8)
 	I_Error ("Weird actor->movedir!");
 		
-    tryx = actor->x + actor->info->speed*xspeed[actor->movedir];
-    tryy = actor->y + actor->info->speed*yspeed[actor->movedir];
+    tryx = actor->x + P_MobjSpeed(actor->info)*xspeed[actor->movedir];
+    tryy = actor->y + P_MobjSpeed(actor->info)*yspeed[actor->movedir];
 
     try_ok = P_TryMove (actor, tryx, tryy);
 
@@ -1055,14 +1055,14 @@ void A_Tracer (mobj_t* actor)
     }
 	
     exact = actor->angle>>ANGLETOFINESHIFT;
-    actor->momx = FixedMul (actor->info->speed, finecosine[exact]);
-    actor->momy = FixedMul (actor->info->speed, finesine[exact]);
+    actor->momx = FixedMul (P_MobjSpeed(actor->info), finecosine[exact]);
+    actor->momy = FixedMul (P_MobjSpeed(actor->info), finesine[exact]);
     
     // change slope
     dist = P_AproxDistance (dest->x - actor->x,
 			    dest->y - actor->y);
     
-    dist = dist / actor->info->speed;
+    dist = dist / P_MobjSpeed(actor->info);
 
     if (dist < 1)
 	dist = 1;
@@ -1166,9 +1166,9 @@ void A_VileChase (mobj_t* actor)
     {
 	// check for corpses to raise
 	viletryx =
-	    actor->x + actor->info->speed*xspeed[actor->movedir];
+	    actor->x + P_MobjSpeed(actor->info)*xspeed[actor->movedir];
 	viletryy =
-	    actor->y + actor->info->speed*yspeed[actor->movedir];
+	    actor->y + P_MobjSpeed(actor->info)*yspeed[actor->movedir];
 
 	xl = (viletryx - bmaporgx - MAXRADIUS*2)>>MAPBLOCKSHIFT;
 	xh = (viletryx - bmaporgx + MAXRADIUS*2)>>MAPBLOCKSHIFT;

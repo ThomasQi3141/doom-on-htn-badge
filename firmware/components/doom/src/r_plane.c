@@ -45,7 +45,7 @@ planefunction_t		ceilingfunc;
 // Upstream's 128 visplanes cost 664 bytes each -- 84,992 bytes, a quarter of
 // this board's entire DRAM. 32 covers ordinary Doom scenes; busy ones will hit
 // the limit, which is why R_FindPlane must degrade instead of calling I_Error.
-#define MAXVISPLANES	24
+#define MAXVISPLANES	12
 visplane_t		visplanes[MAXVISPLANES];
 visplane_t*		lastvisplane;
 visplane_t*		floorplane;

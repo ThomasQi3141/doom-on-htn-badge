@@ -1105,7 +1105,10 @@ const state_t	states[NUMSTATES] = {
 };
 
 
-mobjinfo_t mobjinfo[NUMMOBJTYPES] = {
+// 12,604 bytes, in flash for the same reason states[] is. The only writes were
+// three projectile speeds set for Nightmare and -fast; P_MobjSpeed applies
+// those on read instead.
+const mobjinfo_t mobjinfo[NUMMOBJTYPES] = {
 
     {		// MT_PLAYER
 	-1,		// doomednum

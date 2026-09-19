@@ -63,7 +63,9 @@ extern int		loopcount;
 
 #define MAXLIGHTSCALE		48
 #define LIGHTSCALESHIFT		12
-#define MAXLIGHTZ	       128
+// 16 light levels x this many pointers. Halving it costs a little precision in
+// distance light-diminishing and gives back 4,096 bytes.
+#define MAXLIGHTZ	        64
 #define LIGHTZSHIFT		20
 
 extern lighttable_t*	scalelight[LIGHTLEVELS][MAXLIGHTSCALE];

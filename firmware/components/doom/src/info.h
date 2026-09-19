@@ -22,6 +22,7 @@
 #define __INFO__
 
 #include "doomtype.h"
+#include "m_fixed.h"
 
 // Needed for action function pointer handling.
 #include "d_think.h"
@@ -1341,6 +1342,17 @@ typedef struct
 
 } mobjinfo_t;
 
-extern mobjinfo_t mobjinfo[NUMMOBJTYPES];
+extern const mobjinfo_t mobjinfo[NUMMOBJTYPES];
+
+// Nightmare and -fast raise three projectile speeds. mobjinfo lives in flash,
+// so the override happens here rather than by rewriting the table.
+static inline int P_MobjSpeed(const mobjinfo_t *info)
+{
+    if (fast_monsters && (info == &mobjinfo[MT_BRUISERSHOT] ||
+                          info == &mobjinfo[MT_HEADSHOT] ||
+                          info == &mobjinfo[MT_TROOPSHOT]))
+        return 20*FRACUNIT;
+    return info->speed;
+}
 
 #endif

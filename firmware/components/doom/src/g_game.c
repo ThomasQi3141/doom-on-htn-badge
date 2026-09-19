@@ -1814,19 +1814,6 @@ G_InitNew
     // mobjinfo stays in RAM, so those writes are unchanged.
     fast_monsters = (fastparm || skill == sk_nightmare);
 
-    if (fast_monsters)
-    {
-	mobjinfo[MT_BRUISERSHOT].speed = 20*FRACUNIT;
-	mobjinfo[MT_HEADSHOT].speed = 20*FRACUNIT;
-	mobjinfo[MT_TROOPSHOT].speed = 20*FRACUNIT;
-    }
-    else
-    {
-	mobjinfo[MT_BRUISERSHOT].speed = 15*FRACUNIT;
-	mobjinfo[MT_HEADSHOT].speed = 10*FRACUNIT;
-	mobjinfo[MT_TROOPSHOT].speed = 10*FRACUNIT;
-    }
-
     // force players to be initialized upon first level load
     for (i=0 ; i<MAXPLAYERS ; i++)
 	players[i].playerstate = PST_REBORN;
