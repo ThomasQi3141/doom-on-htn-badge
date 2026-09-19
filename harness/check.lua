@@ -9,6 +9,25 @@ local SIZE_HARD = 64 * 1024   -- firmware cap on main.lua
 local SIZE_WARN = 18 * 1024   -- stop adding features, start consolidating
 local SIZE_NOTE = 14 * 1024   -- the size at which Packman failed to compile
 
+-- Compiling main.lua must fit in one CONTIGUOUS block of system heap. That is
+-- what actually fails on this badge -- not the heap_kb quota, which reports
+-- "Lua memory limit exceeded" for an allocator failure too.
+--
+-- Calibrated on real hardware, htn_doom at 11,679 B of source:
+--   desktop-64 compile heap                     36,261 B
+--   system heap consumed at launch (71844->52632) 19,212 B
+--   largest block consumed        (61440->43008) 18,432 B
+--   => 32-bit footprint is 0.508 of the desktop figure.
+--
+-- Two regimes were observed for the largest free block at launch time:
+--   freshly booted badge, at the Launcher        61,440 B  -> app launches
+--   badge that had been in use                   15,872 B  -> app FAILS to launch
+-- Staying under the second number is what makes the app survive a demo on a
+-- badge somebody has already been using.
+local COMPILE_32_RATIO = 0.508
+local BLOCK_FRESH = 61440
+local BLOCK_USED  = 15872
+
 -- Blank out comments and string bodies, preserving length and newlines, so the
 -- scans below cannot fire on prose or on text inside a label.
 function M.strip(src)
@@ -138,8 +157,28 @@ function M.run(opts)
     p("  compiles        NO -- %s", tostring(lerr))
   else
     p("  compiles        yes (Lua %s, text mode)", _VERSION:match("%d+%.%d+"))
-    p("  compile heap    %6d bytes retained by load() (desktop 64-bit; the badge's "
-      .. "32-bit build is smaller, but watch this GROW)", h1 - h0)
+    local d64 = h1 - h0
+    local est32 = math.floor(d64 * COMPILE_32_RATIO)
+    p("  compile heap    %6d bytes on desktop 64-bit  ->  ~%d B estimated on the "
+      .. "badge's 32-bit build", d64, est32)
+    p("  fresh badge     %6d B block available   %s",
+      BLOCK_FRESH, est32 <= BLOCK_FRESH
+        and ("launches, margin " .. (BLOCK_FRESH - est32) .. " B") or "WILL NOT LAUNCH")
+    p("  used badge      %6d B block available   %s",
+      BLOCK_USED, est32 <= BLOCK_USED
+        and ("launches, margin " .. (BLOCK_USED - est32) .. " B")
+        or ("WILL NOT LAUNCH -- needs " .. (est32 - BLOCK_USED) .. " B less"))
+    if est32 > BLOCK_FRESH then
+      fail("estimated 32-bit compile footprint %d B exceeds even a freshly booted "
+           .. "badge's %d B block: the app cannot start at all", est32, BLOCK_FRESH)
+    elseif est32 > BLOCK_USED then
+      warn("compile footprint ~%d B needs a freshly booted badge. On a badge that "
+           .. "has been used (largest block %d B observed) the app fails before "
+           .. "on_enter. Demo risk: shed %d B of estimated footprint (about %d B "
+           .. "of desktop compile heap) to clear it.",
+           est32, BLOCK_USED, est32 - BLOCK_USED,
+           math.floor((est32 - BLOCK_USED) / COMPILE_32_RATIO))
+    end
   end
   chunk = nil
   collectgarbage("collect")
