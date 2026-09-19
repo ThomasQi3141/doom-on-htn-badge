@@ -15,18 +15,18 @@ static const char *TAG = "video";
 // bottleneck, the 40 MHz bus is.
 #define CHUNK_ROWS 8
 
-static uint8_t  *s_fb;                     // DOOM_W * DOOM_H, 8bpp
+// Static, not heap-allocated. At 64,000 bytes this is the single biggest
+// allocation in the system, and taking it from the heap decides which of the
+// three DRAM regions gets split -- so an unrelated .bss change could move it
+// and halve the contiguous space left for Doom's zone. As a static array it is
+// placed once at link time and the heap regions stay whole.
+static uint8_t  s_fb[DOOM_W * DOOM_H];
 static uint16_t *s_chunk[DISPLAY_SLOTS];   // DMA-capable, byte-swapped RGB565
 static uint16_t  s_pal[256];
 
 bool video_init(void)
 {
-    s_fb = heap_caps_malloc(DOOM_W * DOOM_H, MALLOC_CAP_8BIT);
-    if (!s_fb) {
-        ESP_LOGE(TAG, "could not allocate the %d-byte framebuffer", DOOM_W * DOOM_H);
-        return false;
-    }
-    memset(s_fb, 0, DOOM_W * DOOM_H);
+    memset(s_fb, 0, sizeof(s_fb));
 
     for (int i = 0; i < DISPLAY_SLOTS; i++) {
         s_chunk[i] = heap_caps_malloc(DOOM_W * CHUNK_ROWS * sizeof(uint16_t),

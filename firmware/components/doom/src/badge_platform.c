@@ -126,6 +126,19 @@ void DG_Init(void)
 extern int gametic;
 int I_GetTime(void);
 int Z_FreeMemory(void);
+extern int badge_vp_overflow;
+extern int badge_ds_overflow;
+
+// Doom assumes every pixel of the 3D view is repainted each frame and so never
+// clears. Anything it fails to paint -- a dropped wall segment, a missing
+// visplane, a gap in the BSP -- leaves the previous frame showing through,
+// which reads as sprites smearing as the view turns.
+//
+// Clearing the view ourselves costs one memset per frame and turns that
+// failure mode from a smear into black, which is both far less distracting and
+// diagnostic: if smearing survives this, the cause is not unpainted pixels.
+extern int viewheight;
+extern int viewwindowy;
 
 void DG_DrawFrame(void)
 {
@@ -134,9 +147,25 @@ void DG_DrawFrame(void)
 
     video_present();
 
+    // After presenting, not before: this frame has already been sent, and the
+    // clear is what gives the *next* one a clean slate. Only the 3D view is
+    // cleared -- the status bar is redrawn on change, not every frame.
+    {
+        uint8_t *fb = video_framebuffer();
+        int y0   = (viewwindowy > 0) ? viewwindowy : 0;
+        int rows = (viewheight  > 0) ? viewheight  : 168;
+        if (y0 + rows > DOOM_H) rows = DOOM_H - y0;
+        if (rows > 0) memset(fb + (size_t)y0 * DOOM_W, 0, (size_t)rows * DOOM_W);
+    }
+
     // Is the loop alive, is game time advancing, and do the buttons read?
     // A static title screen with dead input can mean any of the three.
-    if (++frames % 60 == 0)
+    // Set to 1 when tethered and debugging; off for a demo, where nothing is
+    // reading the port and the write can stall.
+#ifndef BADGE_FRAME_LOG
+#define BADGE_FRAME_LOG 0
+#endif
+    if (BADGE_FRAME_LOG && ++frames % 60 == 0)
     {
         int64_t now = esp_timer_get_time();
         // Zone free is in here because a crash that only happens "after a
@@ -145,6 +174,13 @@ void DG_DrawFrame(void)
         ESP_LOGI(TAG, "frame %d: %.1f fps, gametic %d, zone free %d, buttons 0x%03x",
                  frames, 60.0 / ((now - t0) / 1000000.0),
                  gametic, Z_FreeMemory(), buttons_read());
+        if (badge_vp_overflow || badge_ds_overflow)
+        {
+            ESP_LOGW(TAG, "  renderer ran out: visplanes %d, drawsegs %d "
+                          "-- unpainted pixels show the previous frame",
+                     badge_vp_overflow, badge_ds_overflow);
+            badge_vp_overflow = badge_ds_overflow = 0;
+        }
         t0 = now;
     }
 }

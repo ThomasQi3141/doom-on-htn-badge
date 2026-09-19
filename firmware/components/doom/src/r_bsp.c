@@ -494,10 +494,12 @@ void R_Subsector (int num)
     subsector_t*	sub;
 	
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if (num>=numsubsectors)
-	I_Error ("R_Subsector: ss %i with numss = %i",
-		 num,
-		 numsubsectors);
+	return;
 #endif
 
     sscount++;

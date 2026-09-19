@@ -48,7 +48,9 @@
 #define SIL_TOP			2
 #define SIL_BOTH		3
 
-#define MAXDRAWSEGS		64
+// 48 bytes each, and running out drops a wall segment silently -- cheap
+// insurance against holes in the frame.
+#define MAXDRAWSEGS		128
 
 
 

@@ -423,8 +423,12 @@ R_DrawVisSprite
     {
 	texturecolumn = frac>>FRACBITS;
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
 	if (texturecolumn < 0 || texturecolumn >= SHORT(patch->width))
-	    I_Error ("R_DrawSpriteRange: bad texturecolumn");
+	    return;
 #endif
 	column = (column_t *) ((byte *)patch +
 			       LONG(patch->columnofs[texturecolumn]));
@@ -496,15 +500,21 @@ void R_ProjectSprite (mobj_t* thing)
     
     // decide which patch to use for sprite relative to player
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if ((unsigned int) thing->sprite >= (unsigned int) numsprites)
-	I_Error ("R_ProjectSprite: invalid sprite number %i ",
-		 thing->sprite);
+	return;
 #endif
     sprdef = &sprites[thing->sprite];
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if ( (thing->frame&FF_FRAMEMASK) >= sprdef->numframes )
-	I_Error ("R_ProjectSprite: invalid sprite frame %i : %i ",
-		 thing->sprite, thing->frame);
+	return;
 #endif
     sprframe = &sprdef->spriteframes[ thing->frame & FF_FRAMEMASK];
 
@@ -649,15 +659,21 @@ void R_DrawPSprite (pspdef_t* psp)
     
     // decide which patch to use
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if ( (unsigned)psp->state->sprite >= (unsigned int) numsprites)
-	I_Error ("R_ProjectSprite: invalid sprite number %i ",
-		 psp->state->sprite);
+	return;
 #endif
     sprdef = &sprites[psp->state->sprite];
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if ( (psp->state->frame & FF_FRAMEMASK)  >= sprdef->numframes)
-	I_Error ("R_ProjectSprite: invalid sprite frame %i : %i ",
-		 psp->state->sprite, psp->state->frame);
+	return;
 #endif
     sprframe = &sprdef->spriteframes[ psp->state->frame & FF_FRAMEMASK ];
 

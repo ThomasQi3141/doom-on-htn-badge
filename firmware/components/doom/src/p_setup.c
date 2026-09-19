@@ -494,6 +494,8 @@ void P_LoadSideDefs (int lump)
 	sd->sector = &sectors[SHORT(msd->sector)];
     }
 
+
+
     W_ReleaseLumpNum(lump);
 }
 
@@ -794,34 +796,23 @@ P_SetupLevel
 	
     // note: most of this ordering is important	
     P_LoadBlockMap (lumpnum+ML_BLOCKMAP);
-    printf("    [lvl] %d zone free after P_LoadBlockMap\n", Z_FreeMemory());
     P_LoadVertexes (lumpnum+ML_VERTEXES);
-    printf("    [lvl] %d zone free after P_LoadVertexes\n", Z_FreeMemory());
     P_LoadSectors (lumpnum+ML_SECTORS);
-    printf("    [lvl] %d zone free after P_LoadSectors\n", Z_FreeMemory());
     P_LoadSideDefs (lumpnum+ML_SIDEDEFS);
-    printf("    [lvl] %d zone free after P_LoadSideDefs\n", Z_FreeMemory());
 
     P_LoadLineDefs (lumpnum+ML_LINEDEFS);
 
-    printf("    [lvl] %d zone free after P_LoadLineDefs\n", Z_FreeMemory());
     P_LoadSubsectors (lumpnum+ML_SSECTORS);
-    printf("    [lvl] %d zone free after P_LoadSubsectors\n", Z_FreeMemory());
     P_LoadNodes (lumpnum+ML_NODES);
-    printf("    [lvl] %d zone free after P_LoadNodes\n", Z_FreeMemory());
     P_LoadSegs (lumpnum+ML_SEGS);
-    printf("    [lvl] %d zone free after P_LoadSegs\n", Z_FreeMemory());
 
     P_GroupLines ();
 
-    printf("    [lvl] %d zone free after P_GroupLines\n", Z_FreeMemory());
     P_LoadReject (lumpnum+ML_REJECT);
-    printf("    [lvl] %d zone free after P_LoadReject\n", Z_FreeMemory());
 
     bodyqueslot = 0;
     deathmatch_p = deathmatchstarts;
     P_LoadThings (lumpnum+ML_THINGS);
-    printf("    [lvl] %d zone free after P_LoadThings\n", Z_FreeMemory());
     
     // if deathmatch, randomly spawn the active players
     if (deathmatch)

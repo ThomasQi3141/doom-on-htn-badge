@@ -135,8 +135,19 @@ void P_InitSwitchList(void)
 	    
 	    value = R_TextureNumForName(alphSwitchList[i].name1);
 #endif
-	    switchlist[index++] = R_TextureNumForName(DEH_String(alphSwitchList[i].name1));
-	    switchlist[index++] = R_TextureNumForName(DEH_String(alphSwitchList[i].name2));
+	    // The badge build prunes TEXTURE1 down to what the map can reach, so
+	    // most switch textures are simply absent. R_TextureNumForName aborts
+	    // on a miss; skipping the pair leaves that switch unregistered,
+	    // which is correct -- a switch whose texture does not exist cannot
+	    // appear in the level either.
+	    int sw1 = R_CheckTextureNumForName(DEH_String(alphSwitchList[i].name1));
+	    int sw2 = R_CheckTextureNumForName(DEH_String(alphSwitchList[i].name2));
+
+	    if (sw1 < 0 || sw2 < 0)
+		continue;
+
+	    switchlist[index++] = sw1;
+	    switchlist[index++] = sw2;
 	}
     }
 }

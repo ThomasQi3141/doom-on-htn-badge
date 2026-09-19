@@ -109,3 +109,54 @@ def strip_wad(wad, drop_audio=True, drop_extras=False):
             continue
         out.append((name, wad.data[pos:pos + size]))
     return out
+
+
+# ---------------------------------------------------------------- pictures
+
+def decode_patch_into(raw, dst, dst_w, dst_h, ox, oy, mask):
+    """Paste a Doom patch into an 8bpp buffer, recording covered pixels."""
+    width, height, lo, to = struct.unpack_from("<hhhh", raw, 0)
+    colofs = struct.unpack_from(f"<{width}I", raw, 8)
+    for col in range(width):
+        x = ox + col
+        if not (0 <= x < dst_w):
+            continue
+        p = colofs[col]
+        while raw[p] != 0xFF:
+            top, ln = raw[p], raw[p + 1]
+            src = p + 3
+            for i in range(ln):
+                y = oy + top + i
+                if 0 <= y < dst_h:
+                    dst[y * dst_w + x] = raw[src + i]
+                    mask[y * dst_w + x] = 1
+            p += ln + 4
+    return width, height
+
+
+def encode_patch(pix, w, h, mask=None):
+    """Encode an 8bpp buffer as a Doom patch (column/post format)."""
+    cols = []
+    for x in range(w):
+        runs, y = [], 0
+        while y < h:
+            if mask is not None and not mask[y * w + x]:
+                y += 1
+                continue
+            start = y
+            while y < h and (mask is None or mask[y * w + x]) and (y - start) < 254:
+                y += 1
+            runs.append((start, bytes(pix[r * w + x] for r in range(start, y))))
+        col = b""
+        for top, data in runs:
+            col += bytes([top, len(data), data[0] if data else 0]) + data + bytes([data[-1] if data else 0])
+        col += b"\xff"
+        cols.append(col)
+
+    header = struct.pack("<hhhh", w, h, 0, 0)
+    table = 8 + 4 * w
+    offs, pos = b"", table
+    for c in cols:
+        offs += struct.pack("<I", pos)
+        pos += len(c)
+    return header + offs + b"".join(cols)

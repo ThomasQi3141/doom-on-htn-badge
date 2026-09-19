@@ -114,11 +114,15 @@ void R_DrawColumn (void)
     if (count < 0) 
 	return; 
 				 
-#ifdef RANGECHECK 
+#ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+ 
     if ((unsigned)dc_x >= SCREENWIDTH
 	|| dc_yl < 0
 	|| dc_yh >= SCREENHEIGHT) 
-	I_Error ("R_DrawColumn: %i to %i at %i", dc_yl, dc_yh, dc_x); 
+	return; 
 #endif 
 
     // Framebuffer destination address.
@@ -222,13 +226,17 @@ void R_DrawColumnLow (void)
     if (count < 0) 
 	return; 
 				 
-#ifdef RANGECHECK 
+#ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+ 
     if ((unsigned)dc_x >= SCREENWIDTH
 	|| dc_yl < 0
 	|| dc_yh >= SCREENHEIGHT)
     {
 	
-	I_Error ("R_DrawColumn: %i to %i at %i", dc_yl, dc_yh, dc_x);
+	return;
     }
     //	dccount++; 
 #endif 
@@ -303,12 +311,15 @@ void R_DrawFuzzColumn (void)
     if (count < 0) 
 	return; 
 
-#ifdef RANGECHECK 
+#ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+ 
     if ((unsigned)dc_x >= SCREENWIDTH
 	|| dc_yl < 0 || dc_yh >= SCREENHEIGHT)
     {
-	I_Error ("R_DrawFuzzColumn: %i to %i at %i",
-		 dc_yl, dc_yh, dc_x);
+	return;
     }
 #endif
     
@@ -368,12 +379,15 @@ void R_DrawFuzzColumnLow (void)
     
     x = dc_x << 1;
     
-#ifdef RANGECHECK 
+#ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+ 
     if ((unsigned)x >= SCREENWIDTH
 	|| dc_yl < 0 || dc_yh >= SCREENHEIGHT)
     {
-	I_Error ("R_DrawFuzzColumn: %i to %i at %i",
-		 dc_yl, dc_yh, dc_x);
+	return;
     }
 #endif
     
@@ -434,13 +448,16 @@ void R_DrawTranslatedColumn (void)
     if (count < 0) 
 	return; 
 				 
-#ifdef RANGECHECK 
+#ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+ 
     if ((unsigned)dc_x >= SCREENWIDTH
 	|| dc_yl < 0
 	|| dc_yh >= SCREENHEIGHT)
     {
-	I_Error ( "R_DrawColumn: %i to %i at %i",
-		  dc_yl, dc_yh, dc_x);
+	return;
     }
     
 #endif 
@@ -483,13 +500,16 @@ void R_DrawTranslatedColumnLow (void)
     // low detail, need to scale by 2
     x = dc_x << 1;
 				 
-#ifdef RANGECHECK 
+#ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+ 
     if ((unsigned)x >= SCREENWIDTH
 	|| dc_yl < 0
 	|| dc_yh >= SCREENHEIGHT)
     {
-	I_Error ( "R_DrawColumn: %i to %i at %i",
-		  dc_yl, dc_yh, x);
+	return;
     }
     
 #endif 
@@ -598,13 +618,16 @@ void R_DrawSpan (void)
     unsigned int xtemp, ytemp;
 
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if (ds_x2 < ds_x1
 	|| ds_x1<0
 	|| ds_x2>=SCREENWIDTH
 	|| (unsigned)ds_y>SCREENHEIGHT)
     {
-	I_Error( "R_DrawSpan: %i to %i at %i",
-		 ds_x1,ds_x2,ds_y);
+	return;
     }
 //	dscount++;
 #endif
@@ -727,13 +750,16 @@ void R_DrawSpanLow (void)
     int spot;
 
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if (ds_x2 < ds_x1
 	|| ds_x1<0
 	|| ds_x2>=SCREENWIDTH
 	|| (unsigned)ds_y>SCREENHEIGHT)
     {
-	I_Error( "R_DrawSpan: %i to %i at %i",
-		 ds_x1,ds_x2,ds_y);
+	return;
     }
 //	dscount++; 
 #endif

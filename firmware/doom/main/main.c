@@ -49,9 +49,13 @@ void app_main(void)
 
     // Why did we start? A panic and a clean boot look identical otherwise,
     // and an I_Error and a hard fault need completely different hunting.
-    ESP_LOGI(TAG, "reset reason: %d  (1=power-on 3=sw 4=panic 5=int-wdt 6=task-wdt 7=wdt)",
-             (int)esp_reset_reason());
-    I_ReportLastCrash();
+    // Only interesting after a panic. Printing a stale message on every
+    // ordinary boot made it look like the badge had just crashed when it had not.
+    if (esp_reset_reason() == ESP_RST_PANIC)
+    {
+        ESP_LOGW(TAG, "recovered from a panic");
+        I_ReportLastCrash();
+    }
     report_memory("boot");
 
     buttons_init();

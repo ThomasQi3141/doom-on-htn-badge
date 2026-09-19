@@ -813,8 +813,18 @@ int	R_TextureNumForName (char* name)
 
     if (i==-1)
     {
-	I_Error ("R_TextureNumForName: %s not found",
-		 name);
+	// The badge build prunes TEXTURE1 to what the carved map can reach, so
+	// by-name lookups from the switch list, the animation table and the
+	// sliding-door frames will miss. Aborting turns each absent texture
+	// into a crash and a whack-a-mole hunt; texture 0 is a harmless stand-in
+	// for something the level cannot display in the first place.
+	static int complained;
+	if (complained < 8)
+	{
+	    printf("  (texture %s absent; using texture 0)\n", name);
+	    complained++;
+	}
+	return 0;
     }
     return i;
 }

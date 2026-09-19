@@ -89,7 +89,11 @@ void V_CopyRect(int srcx, int srcy, byte *source,
     byte *src;
     byte *dest; 
  
-#ifdef RANGECHECK 
+#ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+ 
     if (srcx < 0
      || srcx + width > SCREENWIDTH
      || srcy < 0
@@ -99,7 +103,7 @@ void V_CopyRect(int srcx, int srcy, byte *source,
      || desty < 0
      || desty + height > SCREENHEIGHT)
     {
-        I_Error ("Bad V_CopyRect");
+        return;
     }
 #endif 
 
@@ -157,12 +161,16 @@ void V_DrawPatch(int x, int y, patch_t *patch)
     }
 
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if (x < 0
      || x + SHORT(patch->width) > SCREENWIDTH
      || y < 0
      || y + SHORT(patch->height) > SCREENHEIGHT)
     {
-        I_Error("Bad V_DrawPatch x=%i y=%i patch.width=%i patch.height=%i topoffset=%i leftoffset=%i", x, y, patch->width, patch->height, patch->topoffset, patch->leftoffset);
+        return;
     }
 #endif
 
@@ -220,13 +228,17 @@ void V_DrawPatchFlipped(int x, int y, patch_t *patch)
             return;
     }
 
-#ifdef RANGECHECK 
+#ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+ 
     if (x < 0
      || x + SHORT(patch->width) > SCREENWIDTH
      || y < 0
      || y + SHORT(patch->height) > SCREENHEIGHT)
     {
-        I_Error("Bad V_DrawPatchFlipped");
+        return;
     }
 #endif
 
@@ -504,13 +516,17 @@ void V_DrawBlock(int x, int y, int width, int height, byte *src)
 { 
     byte *dest; 
  
-#ifdef RANGECHECK 
+#ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+ 
     if (x < 0
      || x + width >SCREENWIDTH
      || y < 0
      || y + height > SCREENHEIGHT)
     {
-	I_Error ("Bad V_DrawBlock");
+	return;
     }
 #endif 
  

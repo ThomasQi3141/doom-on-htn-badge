@@ -1,3 +1,5 @@
+int badge_vp_overflow;
+int badge_ds_overflow;
 //
 // Copyright(C) 1993-1996 Id Software, Inc.
 // Copyright(C) 2005-2014 Simon Howard
@@ -50,7 +52,7 @@ planefunction_t		ceilingfunc;
 // Real Doom geometry overflowed 24 in ordinary play. Both creation sites are
 // bounded now, so going over is a merged floor for one frame rather than a
 // crash -- but the limit should still cover the common case.
-#define MAXVISPLANES	32
+#define MAXVISPLANES	40
 visplane_t		visplanes[MAXVISPLANES];
 visplane_t*		lastvisplane;
 visplane_t*		floorplane;
@@ -131,12 +133,16 @@ R_MapPlane
     unsigned	index;
 	
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if (x2 < x1
      || x1 < 0
      || x2 >= viewwidth
      || y > viewheight)
     {
-	I_Error ("R_MapPlane: %i, %i at %i",x1,x2,y);
+	return;
     }
 #endif
 
@@ -246,6 +252,8 @@ R_FindPlane
 		
     if (lastvisplane - visplanes == MAXVISPLANES)
     {
+	extern int badge_vp_overflow;
+	badge_vp_overflow++;
 	// Vanilla aborts here. With only MAXVISPLANES planes on a board this
 	// small, a busy view would take the whole badge down mid-demo. Reusing
 	// the last plane draws that floor or ceiling with the wrong flat for a
@@ -325,6 +333,8 @@ R_CheckPlane
     // within seconds and the damage surfaces far from the cause.
     if (lastvisplane - visplanes >= MAXVISPLANES)
     {
+	extern int badge_vp_overflow;
+	badge_vp_overflow++;
 	// Out of planes: keep drawing into the one we have. The floor or
 	// ceiling is merged with its neighbour for a frame, which is a visual
 	// blemish, not a reboot.
@@ -397,9 +407,12 @@ void R_DrawPlanes (void)
     int                 lumpnum;
 				
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if (ds_p - drawsegs > MAXDRAWSEGS)
-	I_Error ("R_DrawPlanes: drawsegs overflow (%i)",
-		 ds_p - drawsegs);
+	return;
     
     if (lastvisplane - visplanes > MAXVISPLANES)
     {
@@ -410,8 +423,7 @@ void R_DrawPlanes (void)
     }
     
     if (lastopening - openings > MAXOPENINGS)
-	I_Error ("R_DrawPlanes: opening overflow (%i)",
-		 lastopening - openings);
+	return;
 #endif
 
     for (pl = visplanes ; pl < lastvisplane ; pl++)

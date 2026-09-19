@@ -380,12 +380,25 @@ R_StoreWallRange
     int			lightnum;
 
     // don't overflow and crash
+    //
+    // Returning here drops a wall segment entirely. Doom never clears the
+    // framebuffer -- it assumes every pixel is repainted each frame -- so a
+    // dropped segment leaves the previous frame showing through, which reads
+    // as sprites smearing as you turn.
     if (ds_p == &drawsegs[MAXDRAWSEGS])
-	return;		
+    {
+	extern int badge_ds_overflow;
+	badge_ds_overflow++;
+	return;
+    }		
 		
 #ifdef RANGECHECK
+	// RANGECHECK is Doom's development assertion, and doomdef.h leaves it
+	// on. On a badge that is a demo-ending reboot for a single bad column.
+	// Skipping the draw degrades one primitive instead.
+
     if (start >=viewwidth || start > stop)
-	I_Error ("Bad R_RenderWallRange: %i to %i", start , stop);
+	return;
 #endif
     
     sidedef = curline->sidedef;
