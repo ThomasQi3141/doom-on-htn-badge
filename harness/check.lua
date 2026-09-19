@@ -304,7 +304,8 @@ function M.run(opts)
   end
 
   -- dist round-trip ---------------------------------------------------------
-  local dist = sandbox.read(root .. "/dist/htn_doom.lua")
+  local dist_path = opts.dist or (root .. "/dist/htn_doom.lua")
+  local dist = sandbox.read(dist_path)
   if dist then
     local hdr, body = dist:match("^%-%-%[==%[badge%-app\n(.-)\n%]==%]\n(.*)$")
     if not hdr then
@@ -317,10 +318,24 @@ function M.run(opts)
       if body:gsub("^\n", "") ~= src then
         fail("dist/htn_doom.lua body does not match main.lua (run tools/bundle.lua)")
       end
+      -- Compile the BUNDLE itself, not just main.lua: the manifest header has
+      -- to survive as a Lua long comment, and this is the exact byte sequence
+      -- the user pastes. Never hand over an artifact that was not compiled.
+      local benv = sandbox.env(mock.build{})
+      local bchunk, berr = sandbox.load(dist, "dist", benv)
+      if not bchunk then
+        fail("dist/htn_doom.lua does not COMPILE: %s", tostring(berr))
+      end
+      -- The bundled slug decides which app directory a push overwrites.
+      local dslug = hdr:match("slug=([%w_%-]+)")
+      if dslug ~= (opts.slug or "htn_doom") then
+        fail("dist bundle slug is '%s' but this app is '%s' -- pushing it would "
+             .. "overwrite the wrong app directory", tostring(dslug), opts.slug or "htn_doom")
+      end
       if not fails[1] then p("  dist            round-trips to manifest.cfg + main.lua") end
     end
   else
-    warn("dist/htn_doom.lua not built yet (run tools/bundle.lua)")
+    warn("%s not built yet (run tools/bundle.lua)", dist_path)
   end
 
   -- verdict -----------------------------------------------------------------
