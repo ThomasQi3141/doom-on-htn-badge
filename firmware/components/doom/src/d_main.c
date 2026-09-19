@@ -1845,6 +1845,15 @@ void D_DoomMain (void)
 
     if (gameaction != ga_loadgame )
     {
+		// Boot straight into the map rather than the title screen. The attract
+		// demos each warp to their own level -- DEMO1 plays E1M5, which needs
+		// 240,189 bytes of level data -- so while a real Doom level is out of
+		// reach the title screen just crash-loops into a demo it cannot load.
+		autostart = true;
+		startepisode = 1;
+		startmap = 1;
+		startskill = sk_medium;
+
 		if (autostart || netgame)
 			G_InitNew (startskill, startepisode, startmap);
 		else

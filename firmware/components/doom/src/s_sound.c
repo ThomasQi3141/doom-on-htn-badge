@@ -392,6 +392,14 @@ static int S_AdjustSoundParams(mobj_t *listener, mobj_t *source,
 
 void S_StartSound(void *origin_p, int sfx_id)
 {
+    // The board has no speaker, amp or DAC. Everything below this point exists
+    // to feed a mixer that does not exist -- and it writes to S_sfx, which is
+    // in read-only flash, so reaching it is a store access fault rather than
+    // merely a waste of cycles.
+    (void)origin_p;
+    (void)sfx_id;
+    return;
+
     sfxinfo_t *sfx;
     mobj_t *origin;
     int rc;
