@@ -196,13 +196,13 @@ void D_Display (void)
     }
 
     // save the current screen if about to wipe
-    if (gamestate != wipegamestate)
-		{
-		wipe = true;
-		wipe_StartScreen(0, 0, SCREENWIDTH, SCREENHEIGHT);
-    }
-    else
-    	wipe = false;
+    //
+    // The melt transition needs two full 320x200 screen copies plus a 128,000
+    // byte column-major scratch buffer -- more than this board's entire zone
+    // heap. It is purely a cosmetic transition between screens, so it is off.
+    // With it on, the very first D_Display never returns and the title screen
+    // sits there frozen, which is exactly how it looked.
+    wipe = false;
 
     if (gamestate == GS_LEVEL && gametic)
     	HU_Erase();

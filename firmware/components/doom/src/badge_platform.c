@@ -123,9 +123,26 @@ void DG_Init(void)
              DG_ScreenBuffer);
 }
 
+extern int gametic;
+int I_GetTime(void);
+
 void DG_DrawFrame(void)
 {
+    static int frames;
+    static int64_t t0;
+
     video_present();
+
+    // Is the loop alive, is game time advancing, and do the buttons read?
+    // A static title screen with dead input can mean any of the three.
+    if (++frames % 60 == 0)
+    {
+        int64_t now = esp_timer_get_time();
+        ESP_LOGI(TAG, "frame %d: %.1f fps, gametic %d, I_GetTime %d, buttons 0x%03x",
+                 frames, 60.0 / ((now - t0) / 1000000.0),
+                 gametic, I_GetTime(), buttons_read());
+        t0 = now;
+    }
 }
 
 void DG_SetWindowTitle(const char *title) { (void)title; }

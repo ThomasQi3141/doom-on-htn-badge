@@ -25,6 +25,7 @@ extern int myargc;
 extern char **myargv;
 void D_DoomMain(void);
 void DG_Init(void);
+void doomgeneric_Tick(void);
 
 static char *s_argv[] = { "doom", NULL };
 
@@ -60,7 +61,16 @@ void app_main(void)
     DG_Init();
 
     ESP_LOGI(TAG, "handing over to D_DoomMain");
-    D_DoomMain();          // does not return
 
-    ESP_LOGE(TAG, "D_DoomMain returned, which it should never do");
+    // D_DoomMain does *not* keep running the game. doomgeneric's D_DoomLoop
+    // finishes setup, calls doomgeneric_Tick() exactly once and returns --
+    // upstream's platform backends drive the loop themselves. Returning here
+    // is what left the title screen frozen with the main task deleted.
+    D_DoomMain();
+
+    ESP_LOGI(TAG, "entering the game loop");
+    while (1)
+    {
+        doomgeneric_Tick();
+    }
 }
