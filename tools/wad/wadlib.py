@@ -79,7 +79,12 @@ def build_wad(lumps):
 
 
 AUDIO_PREFIXES = ("D_", "DS", "DP")
-DROPPABLE = {"ENDOOM", "DEMO1", "DEMO2", "DEMO3", "DEMO4"}
+
+# Nothing else is safe to drop. The demos are attract-mode content that Doom
+# plays by name when the title screen times out, and ENDOOM is fetched by name
+# on quit -- both go through W_GetNumForName, which calls I_Error on a miss, so
+# removing them turns a timeout into a crash-and-reboot loop.
+DROPPABLE = set()
 
 
 def is_audio(name):
@@ -87,13 +92,13 @@ def is_audio(name):
     return u.startswith(AUDIO_PREFIXES)
 
 
-def strip_wad(wad, drop_audio=True, drop_extras=True):
+def strip_wad(wad, drop_audio=True, drop_extras=False):
     """Return (name, data) pairs with the badge's dead weight removed.
 
     The board has no speaker, amp or DAC, so every sound, every piece of music
-    and every PC-speaker lump is unreachable code's unreachable data. ENDOOM is
-    the DOS text screen shown on exit and the demos are attract-mode playback,
-    neither of which a badge build needs.
+    and every PC-speaker lump is unreachable code's unreachable data. That is
+    the only category that can go: anything Doom fetches by name at runtime
+    must stay, because W_GetNumForName calls I_Error when a lump is absent.
     """
     out = []
     for name, pos, size in wad.lumps:
