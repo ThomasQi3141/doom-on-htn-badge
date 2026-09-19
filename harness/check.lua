@@ -246,7 +246,7 @@ function M.run(opts)
         end
       end
     end
-    local want = {slug = "htn_doom", api = "2"}
+    local want = {slug = opts.slug or "htn_doom", api = "2"}
     for k, v in pairs(want) do
       if kv[k] ~= v then fail("manifest.cfg: %s must be %s, got %s", k, v, tostring(kv[k])) end
     end
