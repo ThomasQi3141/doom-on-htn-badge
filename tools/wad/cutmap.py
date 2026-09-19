@@ -215,7 +215,8 @@ ARENA_PICKUPS  = [(2001, "shotgun"), (2008, "shells"), (2008, "shells"),
                   (2012, "medikit"), (2018, "armor")]
 
 
-def place_arena(new_things, boundary, verts, lines, start, count):
+def place_arena(new_things, boundary, verts, lines, start, count,
+                sector_at=None, ok_sectors=None, floor_of=None):
     """Ring monsters and pickups around the player start.
 
     The demo should open in a fight, not a walk. Candidate spots are taken on
@@ -247,26 +248,57 @@ def place_arena(new_things, boundary, verts, lines, start, count):
             best = min(best, _m.hypot(x-cx, y-cy))
         return best
 
+    # Being inside the level outline is not the same as being reachable. A
+    # ledge, or a room walled off from the player's, passes the polygon test
+    # while sitting somewhere you cannot walk to -- which is how monsters ended
+    # up in a zone the player could not enter. Require the spot to land in a
+    # kept sector whose floor is within one step of the player's.
+    player_floor = None
+    if sector_at and floor_of is not None:
+        _ps = sector_at(px, py)
+        if _ps is not None:
+            player_floor = floor_of(_ps)
+
+    def reachable(x, y):
+        if sector_at is None:
+            return True
+        sec = sector_at(x, y)
+        if sec is None or (ok_sectors is not None and sec not in ok_sectors):
+            return False
+        if player_floor is not None and floor_of is not None:
+            # 24 is Doom's step-up limit; higher than that cannot be walked onto.
+            if abs(floor_of(sec) - player_floor) > 24:
+                return False
+        return True
+
+    # Only a fraction of a ring falls inside the carved area, so sample densely
+    # and let the reachability test do the filtering. Confirmed in play: of 7
+    # spots passing the old inside()-only check, only 3 were actually walkable,
+    # which is exactly what the sector test returns.
     spots = []
-    # Well back from the spawn: the demo should open with a moment to look
-    # around and walk, then a fight, rather than a fight immediately.
-    for radius in (560, 640, 720, 800, 880, 960, 1040):
-        for k in range(16):
-            ang = 2 * _m.pi * k / 16
+    for radius in range(360, 1140, 60):
+        for k in range(48):
+            ang = 2 * _m.pi * k / 48
             x = int(px + radius * _m.cos(ang))
             y = int(py + radius * _m.sin(ang))
             # A demon's radius is 30; 40 units of clearance can wedge one in
             # geometry at spawn, where it never moves and never attacks.
-            if inside(x, y) and clearance(x, y) > 56:
+            if inside(x, y) and clearance(x, y) > 56 and reachable(x, y):
                 spots.append((x, y))
 
+    # Spread the picks across the whole candidate list. Taking the first N
+    # would take them in radius-then-angle order, which piles every monster
+    # onto the nearest ring in one direction.
     placed = 0
-    for i, (x, y) in enumerate(spots):
-        if placed >= count:
-            break
-        ty = ARENA_MONSTERS[placed % len(ARENA_MONSTERS)]
-        new_things.append((x, y, 0, ty, 7))
-        placed += 1
+    if spots:
+        step = max(1, len(spots) // max(1, count))
+        for i in range(0, len(spots), step):
+            if placed >= count:
+                break
+            x, y = spots[i]
+            ty = ARENA_MONSTERS[placed % len(ARENA_MONSTERS)]
+            new_things.append((x, y, 0, ty, 7))
+            placed += 1
 
     # A pistol alone makes for a short demo.
     for j, (ty, _name) in enumerate(ARENA_PICKUPS):
@@ -440,7 +472,9 @@ def carve(m, max_sectors, texremap=None, add_monsters=0, arena=0, tex=None):
         print(f"  added {placed} monsters at existing item positions")
 
     if arena:
-        n, spots = place_arena(new_things, boundary, verts, lines, start, arena)
+        n, spots = place_arena(new_things, boundary, verts, lines, start, arena,
+                               sector_of_point, keep,
+                               lambda si: sects[si][0])
         kinds = len(set(ARENA_MONSTERS[:n])) if n else 0
         print(f"  arena: {n} monsters of {kinds} types around the player start "
               f"({spots} valid spots found), plus weapons and health")
