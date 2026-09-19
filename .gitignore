@@ -1,3 +1,7 @@
 # Contains the badge's provisioned identity and contacts -- keep it, but never
 # push it. This is the only route back to the stock firmware.
 backup/
+
+# Built from the shareware IWAD, so it carries id Software's assets.
+# Regenerate with tools/wad/mkarena.py -- see dist/README.md.
+dist/doom-arena.wad
