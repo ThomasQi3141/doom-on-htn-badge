@@ -145,6 +145,8 @@ static void HoldMessage(const char *line1, const char *line2, int ms)
 // Straight off DG_GetKey rather than through D_PostEvent: the event queue is
 // drained by the game loop, which is not running yet, so anything posted here
 // would sit in the queue and fire as soon as the level started.
+static boolean PairProgress(int elapsed_ms);   // defined below, used by Run
+
 static int PollKey(void)
 {
     int pressed;
@@ -180,7 +182,7 @@ badge_net_role_t BadgeMenu_Run(void)
         Clear();
         WriteCentred(88, role == BADGE_NET_HOST ? "WAITING FOR PLAYER 2..."
                                                 : "LOOKING FOR A HOST...");
-        WriteCentred(112, "UP TO 10 SECONDS");
+        WriteCentred(112, "UP TO 45 SECONDS");
         Present();
         return role;
     }
@@ -220,6 +222,7 @@ badge_net_role_t BadgeMenu_Run(void)
     }
 
     BadgeNet_RequestRole(role);
+    BadgeNet_SetProgress(PairProgress);
 
     if (role == BADGE_NET_OFF)
         return role;
@@ -230,10 +233,54 @@ badge_net_role_t BadgeMenu_Run(void)
     Clear();
     WriteCentred(88, role == BADGE_NET_HOST ? "WAITING FOR PLAYER 2..."
                                             : "LOOKING FOR A HOST...");
-    WriteCentred(112, "UP TO 10 SECONDS");
+    WriteCentred(112, "UP TO 45 SECONDS");
     Present();
 
     return role;
+}
+
+// Repainted from inside BadgeNet_Pair's wait loop. Pairing owns the game task
+// for its whole duration, so without this the badge shows one frozen frame for
+// up to 45 seconds with no countdown, no sign it is alive and no way out --
+// which is what made a perfectly working host look like it had given up after
+// "a couple of seconds".
+static boolean PairProgress(int elapsed_ms)
+{
+    static int last_shown = -1;
+    int remaining = (BADGE_MENU_PAIR_SECONDS * 1000 - elapsed_ms + 999) / 1000;
+    badge_net_role_t role = BadgeNet_RequestedRole();
+    char line[40];
+
+    if (remaining < 0)
+        remaining = 0;
+
+    // Only redraw on a second boundary. Repainting at loop rate would spend
+    // the whole pairing budget in M_WriteText and starve the radio drain.
+    if (remaining != last_shown)
+    {
+        last_shown = remaining;
+
+        Clear();
+        WriteCentred(72, role == BADGE_NET_HOST ? "WAITING FOR PLAYER 2"
+                                                : "LOOKING FOR A HOST");
+        M_snprintf(line, sizeof(line), "%d SECONDS LEFT", remaining);
+        WriteCentred(96, line);
+        WriteCentred(128, "PRESS B TO PLAY ALONE");
+        Present();
+    }
+
+    // B gives up now rather than making the player wait out the timeout.
+    {
+        int pressed;
+        unsigned char key;
+        while (DG_GetKey(&pressed, &key))
+        {
+            if (pressed && key == KEY_USE)
+                return false;
+        }
+    }
+
+    return true;
 }
 
 void BadgeMenu_ShowPairResult(void)
@@ -255,6 +302,26 @@ void BadgeMenu_ShowPairResult(void)
     }
     else
     {
-        HoldMessage("NO PARTNER FOUND", "1 PLAYER", 2000);
+        // Each of these used to read "NO PARTNER FOUND", which told the player
+        // nothing they could act on. A WAD mismatch in particular is something
+        // they can fix, and it is indistinguishable from bad luck otherwise.
+        switch (BadgeNet_FailReason())
+        {
+          case BADGE_NET_FAIL_WAD_MISMATCH:
+            HoldMessage("WAD MISMATCH", "REFLASH BOTH BADGES", 3000);
+            break;
+          case BADGE_NET_FAIL_NO_RADIO:
+            HoldMessage("RADIO DID NOT START", "1 PLAYER", 3000);
+            break;
+          case BADGE_NET_FAIL_NO_WAD:
+            HoldMessage("NO WAD ON THIS BADGE", "1 PLAYER", 3000);
+            break;
+          case BADGE_NET_FAIL_CANCELLED:
+            HoldMessage("CANCELLED", "1 PLAYER", 1200);
+            break;
+          default:
+            HoldMessage("NO PARTNER FOUND", "1 PLAYER", 2000);
+            break;
+        }
     }
 }

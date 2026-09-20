@@ -18,7 +18,7 @@
 
 // Bumped whenever the wire format changes. Two badges with different values
 // refuse to pair rather than desync in a way that looks like a game bug.
-#define BADGE_NET_PROTO 1
+#define BADGE_NET_PROTO 2   // 2: TICCMD carries an ack; see badge_net.c
 
 #define BADGE_NET_PLAYERS 2
 
@@ -66,6 +66,34 @@ badge_net_role_t BadgeNet_RequestedRole(void);
 // the game settings.
 boolean BadgeNet_Pair(void);
 
+// Why the last BadgeNet_Pair() returned false. Every one of these used to
+// produce the same "NO PARTNER FOUND" card, which made a badge whose radio
+// never started look identical to one whose partner was simply late -- and
+// made a WAD mismatch, which is a thing the player can actually fix,
+// indistinguishable from bad luck.
+typedef enum
+{
+    BADGE_NET_FAIL_NONE = 0,
+    BADGE_NET_FAIL_NO_ROLE,
+    BADGE_NET_FAIL_NO_RADIO,
+    BADGE_NET_FAIL_NO_WAD,
+    BADGE_NET_FAIL_WAD_MISMATCH,
+    BADGE_NET_FAIL_CANCELLED,
+    BADGE_NET_FAIL_TIMEOUT,
+} badge_net_fail_t;
+
+badge_net_fail_t BadgeNet_FailReason(void);
+
+// Called repeatedly while pairing waits, roughly every 50 ms, with how long
+// the wait has been running. Return false to give up.
+//
+// Pairing blocks the game task, so without this the screen is frozen for the
+// whole wait: no countdown, no sign the badge is alive, and no way out. It
+// exists so the menu can repaint and poll for a cancel.
+typedef boolean (*badge_net_progress_t)(int elapsed_ms);
+
+void BadgeNet_SetProgress(badge_net_progress_t cb);
+
 // True once paired and still hearing from the peer.
 boolean BadgeNet_Active(void);
 boolean BadgeNet_IsHost(void);
@@ -91,6 +119,10 @@ void BadgeNet_SendTiccmd(ticcmd_t *cmd, int tic);
 // gaps, because D_ReceiveTic carries no tic number and blindly increments
 // recvtic. Also owns the peer-timeout check. Never blocks.
 void BadgeNet_Run(void);
+
+// Arms the peer-silence clock. Called once, immediately before the first tic
+// runs -- see the definition for why pairing time is far too early.
+void BadgeNet_GameStart(void);
 
 // Called from D_QuitNetGame.
 void BadgeNet_Shutdown(void);

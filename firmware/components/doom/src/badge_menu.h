@@ -15,6 +15,9 @@
 
 #include "badge_net.h"
 
+// Must match PAIR_TIMEOUT_MS in badge_net.c; only used to draw the countdown.
+#define BADGE_MENU_PAIR_SECONDS 45
+
 // Draws the lobby and blocks until an item is chosen. Calls
 // BadgeNet_RequestRole() with the answer, then leaves a "waiting for..."
 // screen up so the ten seconds D_CheckNetGame is about to spend inside

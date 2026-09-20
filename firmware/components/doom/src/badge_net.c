@@ -62,6 +62,13 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     uint32_t token;        // the session this belongs to; stale frames die here
     int32_t  first_tic;
+    // The lowest tic the client has not yet delivered to the engine -- what it
+    // is blocked on. Without it the host can only retransmit the newest four
+    // tics, so a client that falls five behind (one lost TICSET is enough) can
+    // never be sent the tic it needs again and both badges wait on each other
+    // forever. Measured before this field existed: host frozen at gametic 270,
+    // client at 265, neither moving again.
+    int32_t  ack;
     uint8_t  count;
     ticcmd_t cmds[BADGE_NET_TICS_PER_PACKET];
 } badge_net_ticcmd_msg_t;
@@ -77,14 +84,25 @@ typedef struct __attribute__((packed)) {
 // These two numbers are the protocol. A compiler that pads them would put one
 // badge's ticcmds at a different offset from the other's, and the game would
 // desync on the first frame with no hint as to why.
-_Static_assert(sizeof(badge_net_ticcmd_msg_t) == 41, "TICCMD is the wire format");
+_Static_assert(sizeof(badge_net_ticcmd_msg_t) == 45, "TICCMD is the wire format");
 _Static_assert(sizeof(badge_net_ticset_msg_t) == 74, "TICSET is the wire format");
 
 // ---------------------------------------------------------------- state
 
-#define PAIR_TIMEOUT_MS      10000   // how long a badge waits for a partner
+// Ten seconds was wrong, and not by a little. Both badges start their own
+// window when their own player presses A, so pairing only works if the two
+// presses land within the window of each other -- and between them the player
+// has to put one badge down, pick the other up and walk its menu with DOWN,
+// DOWN, A. Forty-five seconds is a human amount of time; the progress
+// callback lets the player give up sooner if they want to.
+#define PAIR_TIMEOUT_MS      45000
 #define ANNOUNCE_PERIOD_MS     200   // host repeats itself this often
 #define START_REPEATS            3   // START is unicast, but loss is cheap to cover
+
+// Level loads on the two badges are not synchronised, so the first frame can
+// legitimately be seconds late. PEER_TIMEOUT_MS is for a link that has worked
+// and then stopped; this is for one that has not started yet.
+#define FIRST_CONTACT_MS      8000
 
 static badge_net_role_t   s_requested = BADGE_NET_OFF;
 static boolean            s_paired;
@@ -132,6 +150,12 @@ static int64_t s_last_rx_us;     // last frame accepted from the peer
 static int64_t s_last_tx_us;
 static int     s_stall_tics;
 static boolean s_peer_lost;
+static boolean s_first_contact;   // has the peer ever been heard at all?
+static int32_t s_peer_ack;        // lowest tic the client still needs
+static int32_t s_last_sent_recv;  // rate-limits the host's TICSET
+
+static badge_net_fail_t      s_fail;
+static badge_net_progress_t  s_progress;
 
 #define PEER_TIMEOUT_MS   2000   // silence this long and the peer is gone
 #define KEEPALIVE_MS       100   // resend even with nothing new, so a stalled
@@ -167,6 +191,21 @@ static void log_mac(const char *what, const uint8_t mac[6])
 
 // ---------------------------------------------------------------- role
 
+badge_net_fail_t BadgeNet_FailReason(void) { return s_fail; }
+
+void BadgeNet_SetProgress(badge_net_progress_t cb) { s_progress = cb; }
+
+// Returns false when the player has asked to stop waiting. Called from inside
+// both wait loops, which is the only way anything can happen on screen while
+// pairing has the game task.
+static boolean PairTick(int64_t started_us)
+{
+    if (s_progress == NULL)
+        return true;
+
+    return s_progress((int)((esp_timer_get_time() - started_us) / 1000));
+}
+
 void BadgeNet_RequestRole(badge_net_role_t role)
 {
     s_requested = role;
@@ -201,13 +240,21 @@ static boolean RunHost(uint32_t wad_id)
         .token       = s_token,
     };
 
-    int64_t deadline = esp_timer_get_time() + (int64_t)PAIR_TIMEOUT_MS * 1000;
+    int64_t started  = esp_timer_get_time();
+    int64_t deadline = started + (int64_t)PAIR_TIMEOUT_MS * 1000;
     int64_t next_announce = 0;
 
     ESP_LOGI(TAG, "hosting: waiting up to %d ms for a partner", PAIR_TIMEOUT_MS);
 
     while (esp_timer_get_time() < deadline)
     {
+        if (!PairTick(started))
+        {
+            s_fail = BADGE_NET_FAIL_CANCELLED;
+            ESP_LOGW(TAG, "hosting cancelled by the player");
+            return false;
+        }
+
         int64_t now = esp_timer_get_time();
         if (now >= next_announce)
         {
@@ -237,6 +284,7 @@ static boolean RunHost(uint32_t wad_id)
         {
             // Refusing here is the whole point of the WAD id: two different
             // arenas would desync within seconds and look like a netcode bug.
+            s_fail = BADGE_NET_FAIL_WAD_MISMATCH;
             ESP_LOGE(TAG, "refusing JOIN: WAD 0x%08x, ours is 0x%08x -- "
                           "reflash both badges from the same doom-arena.wad",
                      (unsigned)join.wad_id, (unsigned)wad_id);
@@ -280,12 +328,20 @@ static boolean RunHost(uint32_t wad_id)
 // Client: listen for an ANNOUNCE, answer it, and wait for the host's terms.
 static boolean RunClient(uint32_t wad_id)
 {
-    int64_t deadline = esp_timer_get_time() + (int64_t)PAIR_TIMEOUT_MS * 1000;
+    int64_t started  = esp_timer_get_time();
+    int64_t deadline = started + (int64_t)PAIR_TIMEOUT_MS * 1000;
 
     ESP_LOGI(TAG, "joining: listening up to %d ms for a host", PAIR_TIMEOUT_MS);
 
     while (esp_timer_get_time() < deadline)
     {
+        if (!PairTick(started))
+        {
+            s_fail = BADGE_NET_FAIL_CANCELLED;
+            ESP_LOGW(TAG, "joining cancelled by the player");
+            return false;
+        }
+
         badge_radio_packet_t pkt;
         if (!badge_radio_recv(&pkt, 50))
             continue;
@@ -304,6 +360,7 @@ static boolean RunClient(uint32_t wad_id)
         }
         if (ann.wad_id != wad_id)
         {
+            s_fail = BADGE_NET_FAIL_WAD_MISMATCH;
             ESP_LOGE(TAG, "host has WAD 0x%08x, ours is 0x%08x -- "
                           "reflash both badges from the same doom-arena.wad",
                      (unsigned)ann.wad_id, (unsigned)wad_id);
@@ -361,6 +418,19 @@ boolean BadgeNet_Pair(void)
     s_maketic    = 0;
     s_stall_tics = 0;
     s_peer_lost  = false;
+
+    // Everything that describes a session, not just the ring. Pair() used to
+    // leave s_paired, s_is_host, s_peer and s_start untouched on the early
+    // returns below, so a badge that had paired once and then asked for single
+    // player still reported BadgeNet_Active() -- and D_StartNetGame would put
+    // net_client_connected and netgame back on for a game with no peer.
+    s_paired         = false;
+    s_is_host        = false;
+    s_first_contact  = false;
+    s_last_sent_recv = -1;
+    s_peer_ack       = -1;
+    memset(s_peer, 0, sizeof(s_peer));
+    memset(&s_start, 0, sizeof(s_start));
     s_last_rx_us = s_last_tx_us = esp_timer_get_time();
 
 #ifdef BADGE_NET_LOOPBACK
@@ -373,11 +443,17 @@ boolean BadgeNet_Pair(void)
     ESP_LOGW(TAG, "BADGE_NET_LOOPBACK: player 2 mirrors player 1, radio off");
     return true;
 #else
+    s_fail = BADGE_NET_FAIL_NONE;
+
     if (s_requested == BADGE_NET_OFF)
+    {
+        s_fail = BADGE_NET_FAIL_NO_ROLE;
         return false;
+    }
 
     if (!badge_radio_ready())
     {
+        s_fail = BADGE_NET_FAIL_NO_RADIO;
         ESP_LOGE(TAG, "radio is not up; single player");
         return false;
     }
@@ -385,6 +461,7 @@ boolean BadgeNet_Pair(void)
     uint32_t wad_id = Badge_WadIdentity();
     if (wad_id == 0)
     {
+        s_fail = BADGE_NET_FAIL_NO_WAD;
         ESP_LOGE(TAG, "no WAD identity; refusing to pair blind");
         return false;
     }
@@ -397,6 +474,10 @@ boolean BadgeNet_Pair(void)
         s_token = esp_random();
 
     s_paired = s_is_host ? RunHost(wad_id) : RunClient(wad_id);
+
+    // Only a plain timeout if nothing more specific was recorded on the way.
+    if (!s_paired && s_fail == BADGE_NET_FAIL_NONE)
+        s_fail = BADGE_NET_FAIL_TIMEOUT;
 
     if (s_paired)
     {
@@ -538,6 +619,7 @@ static void ClientSendTiccmd(void)
 
     memset(&msg, 0, sizeof(msg));
     msg.token     = s_token;
+    msg.ack       = s_next_recv;
     msg.first_tic = first;
 
     n = 0;
@@ -567,10 +649,36 @@ static void HostSendTicset(void)
     uint8_t count = 0;
     int n, p;
 
+    // With nothing complete yet there is no tic to describe, but going silent
+    // is worse than saying nothing: the client has no other evidence the host
+    // exists, and broadcast frames are unacknowledged, so an empty TICSET is
+    // the only thing that distinguishes "host is here, waiting for you" from
+    // "host was never there". The receiver drops count == 0 as a no-op.
     if (s_next_recv <= 0)
+    {
+        memset(&msg, 0, sizeof(msg));
+        msg.token       = s_token;
+        msg.first_tic   = 0;
+        msg.count       = 0;
+        msg.ingame_mask = HAVE_ALL;
+        badge_radio_send(BADGE_MSG_TICSET, &msg, sizeof(msg));
+        s_last_tx_us = esp_timer_get_time();
         return;
+    }
 
+    // Anchor the window on the client's ack rather than on our own newest
+    // tic. Sending the newest four is only correct while the client is within
+    // four of us; the moment it is not, those four are all tics it has already
+    // consumed and the one it is actually blocked on never goes out again.
     first = PacketStart(s_next_recv - 1, &count);
+
+    if (s_peer_ack >= 0 && s_peer_ack < first)
+    {
+        first = s_peer_ack;
+        count = BADGE_NET_TICS_PER_PACKET;
+        if (first + count > s_next_recv)
+            count = (uint8_t)(s_next_recv - first);
+    }
 
     memset(&msg, 0, sizeof(msg));
     msg.token       = s_token;
@@ -623,6 +731,15 @@ static void DrainRadio(void)
              || msg.count > BADGE_NET_TICS_PER_PACKET)
                 continue;
 
+            // A peer-supplied tic number is used as a loop bound and as an
+            // array index below, so it is range-checked before anything reads
+            // it. Only ever moves forward, so a reordered frame cannot drag
+            // the retransmit window backwards.
+            if (msg.first_tic < 0 || msg.first_tic > s_maketic + BACKUPTICS)
+                continue;
+            if (msg.ack >= 0 && msg.ack > s_peer_ack)
+                s_peer_ack = msg.ack;
+
             // Copied out first: msg is packed, so &msg.cmds[i] is an
             // unaligned pointer and the C3 traps on some unaligned loads.
             for (i = 0; i < msg.count; i++)
@@ -633,6 +750,7 @@ static void DrainRadio(void)
             }
 
             s_last_rx_us = esp_timer_get_time();
+            s_first_contact = true;
         }
         else if (!s_is_host && frame_is(&pkt, BADGE_MSG_TICSET, sizeof(badge_net_ticset_msg_t)))
         {
@@ -653,6 +771,7 @@ static void DrainRadio(void)
                 }
 
             s_last_rx_us = esp_timer_get_time();
+            s_first_contact = true;
         }
     }
 }
@@ -790,8 +909,17 @@ void BadgeNet_Run(void)
     // Substituting costs the game.
     DeliverComplete();
 
-    if (s_is_host)
+    // Only when there is something new to say. BadgeNet_Run is reached from
+    // every NetUpdate, and TryRunTics calls NetUpdate in an I_Sleep(1) spin
+    // while it waits for tics -- so an unconditional send here put a 78-byte
+    // broadcast on the air roughly every millisecond during exactly the stall
+    // it was meant to help, filling the peer's six-deep queue and burning the
+    // game task in esp_now_send. The keepalive below covers the quiet case.
+    if (s_is_host && s_next_recv != s_last_sent_recv)
+    {
         HostSendTicset();
+        s_last_sent_recv = s_next_recv;
+    }
 
     {
         int64_t now = esp_timer_get_time();
@@ -808,7 +936,14 @@ void BadgeNet_Run(void)
             s_last_tx_us = now;
         }
 
-        if (now - s_last_rx_us > (int64_t)PEER_TIMEOUT_MS * 1000)
+        // Until the peer has been heard once, allow much longer: both badges
+        // independently run P_SetupLevel after pairing and the skew between
+        // them is easily more than PEER_TIMEOUT_MS. After first contact the
+        // tight timeout is the right one -- by then silence really is a fault.
+        int64_t patience = s_first_contact ? (int64_t)PEER_TIMEOUT_MS
+                                           : (int64_t)FIRST_CONTACT_MS;
+
+        if (now - s_last_rx_us > patience * 1000)
             HandlePeerLoss();
     }
 #endif
@@ -824,6 +959,25 @@ void BadgeNet_Shutdown(void)
     badge_radio_flush();
     ESP_LOGI(TAG, "net shut down; %d tics were spent waiting on the peer",
              s_stall_tics);
+}
+
+// The peer clock cannot start at pairing. Between BadgeNet_Pair() returning
+// and the first BadgeNet_Run() the badge still has to show the pairing result
+// for two full seconds, run HU_Init and ST_Init, and load the level -- more
+// than PEER_TIMEOUT_MS on this hardware. Stamped at pairing, every co-op game
+// therefore declared the peer lost on tic 0 and both badges dropped to solo
+// before exchanging a single frame.
+//
+// D_StartGameLoop is the last thing that happens before the first tic, which
+// is the only honest place to start counting silence from.
+void BadgeNet_GameStart(void)
+{
+    if (!s_paired)
+        return;
+
+    s_last_rx_us = s_last_tx_us = esp_timer_get_time();
+    s_first_contact = false;
+    ESP_LOGI(TAG, "co-op game starting; peer clock armed");
 }
 
 int BadgeNet_LastRecvTic(void) { return (int)s_next_recv - 1; }

@@ -328,6 +328,12 @@ void D_ReceiveTic(ticcmd_t *ticcmds, boolean *players_mask)
 
 void D_StartGameLoop(void)
 {
+    // The last moment before the first tic. badge_net's peer-silence timeout
+    // has to start counting from here, not from when pairing finished: the
+    // pairing result card and the level load between the two take longer than
+    // the timeout itself.
+    BadgeNet_GameStart();
+
     lasttime = GetAdjustedTime() / ticdup;
 }
 
