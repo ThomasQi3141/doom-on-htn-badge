@@ -19,6 +19,9 @@ static const char *TAG = "radio";
 // choice that only has to match.
 #define RADIO_CHANNEL 1
 
+// In quarter-dBm, as esp_wifi_set_max_tx_power wants it. 52 == 13 dBm.
+#define RADIO_TX_POWER_QDBM 52
+
 // Six frames is two tics of slack at 35 Hz in each direction. The game drains
 // this every tic; if it ever fills, something above has stalled, and the drop
 // counter is the symptom to look for.
@@ -127,6 +130,25 @@ esp_err_t badge_radio_init(void)
 
     err = esp_wifi_set_channel(RADIO_CHANNEL, WIFI_SECOND_CHAN_NONE);
     if (err != ESP_OK) goto fail_wifi;
+
+    // Turn the transmitter down. The default is 20 dBm, and the current burst
+    // that costs is drawn through an MT3608 boost from two AA cells -- on USB
+    // the supply holds it up, on battery it evidently does not: two badges
+    // that pair in five milliseconds on the bench never see each other at all
+    // once unplugged.
+    //
+    // 13 dBm is a seventh of the radiated power and a much gentler draw. Two
+    // badges being played by two people are an arm's length apart, so range
+    // was never the binding constraint; a transmission that actually happens
+    // beats a stronger one that browns out.
+    err = esp_wifi_set_max_tx_power(RADIO_TX_POWER_QDBM);
+    if (err != ESP_OK) goto fail_wifi;
+
+    {
+        int8_t got = 0;
+        esp_wifi_get_max_tx_power(&got);
+        ESP_LOGI(TAG, "tx power %d (%.1f dBm)", got, got / 4.0);
+    }
 
     err = esp_now_init();
     if (err != ESP_OK) goto fail_wifi;

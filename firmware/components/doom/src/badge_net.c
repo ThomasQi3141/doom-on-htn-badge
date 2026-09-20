@@ -151,6 +151,7 @@ static int64_t s_last_tx_us;
 static int     s_stall_tics;
 static boolean s_peer_lost;
 static boolean s_first_contact;   // has the peer ever been heard at all?
+static boolean s_clock_pending;   // arm the silence timer on the next Run
 static int32_t s_peer_ack;        // lowest tic the client still needs
 static int32_t s_last_sent_recv;  // rate-limits the host's TICSET
 
@@ -429,6 +430,7 @@ boolean BadgeNet_Pair(void)
     s_first_contact  = false;
     s_last_sent_recv = -1;
     s_peer_ack       = -1;
+    s_clock_pending  = true;
     memset(s_peer, 0, sizeof(s_peer));
     memset(&s_start, 0, sizeof(s_start));
     s_last_rx_us = s_last_tx_us = esp_timer_get_time();
@@ -924,6 +926,21 @@ void BadgeNet_Run(void)
     {
         int64_t now = esp_timer_get_time();
 
+        // Arming happens here rather than in D_StartGameLoop because
+        // D_DoomLoop calls TryRunTics() BEFORE D_StartGameLoop() -- so the
+        // first BadgeNet_Run really does land before any "start of game" hook
+        // can run, with the two-second pairing card and a level load already
+        // charged against the silence timer. Both badges then declared each
+        // other lost on tic 0 and fell out of the game they had just joined.
+        //
+        // Doing it on first use makes the call order irrelevant, which is the
+        // only version of this that cannot be broken again by moving a line.
+        if (s_clock_pending)
+        {
+            s_clock_pending = false;
+            s_last_rx_us = s_last_tx_us = now;
+        }
+
         // A keepalive, not padding: while the pair is stalled neither side has
         // anything new to say, and without this each would read the other's
         // silence as a disconnect and drop a badge that is sitting right there.
@@ -944,7 +961,12 @@ void BadgeNet_Run(void)
                                            : (int64_t)FIRST_CONTACT_MS;
 
         if (now - s_last_rx_us > patience * 1000)
+        {
+            ESP_LOGW(TAG, "no frame for %d ms (limit %d, first contact %s)",
+                     (int)((now - s_last_rx_us) / 1000), (int)patience,
+                     s_first_contact ? "yes" : "no");
             HandlePeerLoss();
+        }
     }
 #endif
 }
@@ -975,9 +997,9 @@ void BadgeNet_GameStart(void)
     if (!s_paired)
         return;
 
-    s_last_rx_us = s_last_tx_us = esp_timer_get_time();
+    s_clock_pending = true;
     s_first_contact = false;
-    ESP_LOGI(TAG, "co-op game starting; peer clock armed");
+    ESP_LOGI(TAG, "co-op game starting; peer clock will arm on the first tic");
 }
 
 int BadgeNet_LastRecvTic(void) { return (int)s_next_recv - 1; }
