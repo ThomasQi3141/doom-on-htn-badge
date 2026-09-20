@@ -44,14 +44,14 @@ shasum -a 256 -c dist/SHA256SUMS --ignore-missing --quiet || {
 echo "Flashing $PORT"
 # 0x0      bootloader
 # 0x8000   partition table
-# 0x10000  application  (640 KB partition)
-# 0xB0000  wad          (3,473,408 B partition)
+# 0x10000  application  (1 MB partition)
+# 0x110000 wad          (3,080,192 B partition)
 "$PY" -m esptool --port "$PORT" --before default-reset --baud 921600 \
   write-flash \
   0x0      dist/bootloader.bin \
   0x8000   dist/partition-table.bin \
   0x10000  dist/badge_doom.bin \
-  0xB0000  dist/doom-arena.wad
+  0x110000 dist/doom-arena.wad
 
 echo
 echo "Done. Power-cycle the badge; it boots straight into the arena."

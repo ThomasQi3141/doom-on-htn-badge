@@ -19,7 +19,7 @@ file(GLOB DOOM_SRCS "src/*.c")
 idf_component_register(
     SRCS ${DOOM_SRCS}
     INCLUDE_DIRS "src"
-    REQUIRES badge esp_partition esp_timer
+    REQUIRES badge radio esp_partition esp_timer esp_app_format
 )
 
 # 8bpp output at Doom's native resolution: the engine's paletted buffer is the

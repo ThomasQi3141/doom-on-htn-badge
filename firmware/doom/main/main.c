@@ -18,6 +18,7 @@
 #include "display.h"
 #include "buttons.h"
 #include "video.h"
+#include "radio.h"
 
 static const char *TAG = "doom";
 
@@ -68,6 +69,13 @@ void app_main(void)
         return;
     }
     report_memory("after video_init");
+
+    // Before D_DoomMain: the zone heap takes the largest free block, and the
+    // Wi-Fi driver needs its DRAM before that happens or it never gets any.
+    // A badge whose radio fails still plays singleplayer.
+    if (!radio_init())
+        ESP_LOGW(TAG, "radio unavailable, multiplayer disabled");
+    report_memory("after radio_init");
 
     // Upstream's doomgeneric_Create also allocates DG_ScreenBuffer and reads a
     // response file off disk. We have no disk, and DG_Init points the screen

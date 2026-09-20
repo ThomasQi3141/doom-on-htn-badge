@@ -38,17 +38,20 @@
 
 typedef struct lumpinfo_s lumpinfo_t;
 
+// Slimmed for the badge: the one WAD is memory-mapped, so a lump is never
+// read into a zone cache and there is only one wad_file to point at. That
+// removes two pointers, and the hash chain is a 16-bit index rather than a
+// third, so an entry is 20 bytes instead of 32 -- 14 KB of DRAM across the
+// table, which is what let the Wi-Fi driver and the arena share the zone.
 struct lumpinfo_s
 {
     char	name[8];
-    wad_file_t *wad_file;
     int		position;
     int		size;
-    void       *cache;
 
-    // Used for hash table lookups
-
-    lumpinfo_t *next;
+    // Used for hash table lookups: index + 1 of the next lump in the
+    // chain, 0 at the end.
+    unsigned short next;
 };
 
 

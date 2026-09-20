@@ -8,6 +8,11 @@
 // title screen, and Singleplayer runs the exact G_DeferedInitNew the old
 // autostart did.
 //
+// Multiplayer is the connect screen: it lists the badges the radio can hear,
+// offers a game to the one under the cursor, and once both sides agree it
+// shows who is player 1 and how the link is doing. Starting the game itself
+// is the lockstep work; until then START does nothing there.
+//
 // Everything is drawn with the menu code's own routines -- M_DOOM and the
 // skull cursor via V_DrawPatchDirect, text via M_WriteText on hu_font -- all
 // straight out of the flash-mapped WAD, so no framebuffer or scratch RAM is
@@ -23,6 +28,7 @@
 #include "g_game.h"
 #include "i_swap.h"
 #include "m_menu.h"
+#include "m_misc.h"
 #include "s_sound.h"
 #include "sounds.h"
 #include "v_video.h"
@@ -30,6 +36,10 @@
 #include "z_zone.h"
 #include "hu_stuff.h"
 #include "i_video.h"
+
+#include <stdio.h>
+#include "esp_app_desc.h"
+#include "radio.h"
 
 bootscreen_t bootscreen = BOOT_NONE;
 
@@ -73,11 +83,55 @@ static int  skull_tic;
 static int  skull_frame;
 static int  connect_tic;
 
+// Connect screen: the peer list as of the last tic, and the cursor in it.
+static radio_peer_t peers[RADIO_MAX_PEERS];
+static int          peer_count;
+static int          peer_on;
+
+// How long a refusal message stays up before the list comes back.
+#define MESSAGE_TICS (3 * TICRATE)
+static int message_tic;
+
+static uint32_t my_build_id;
+static uint32_t my_wad_id;
+
+// Who the outstanding offer went to: the list can reorder underneath it.
+static char invited[RADIO_NAME_LEN];
+
 static void Boot_ShowMenu(void)
 {
     bootscreen = BOOT_MENU;
     skull_tic = SKULL_TICS;
     skull_frame = 0;
+    radio_set_discoverable(false);
+}
+
+// What the other badge has to match before it may pair with us: this exact
+// build, and a WAD with the same directory. The ELF hash changes with every
+// link; the directory hash catches a different arena or a different IWAD.
+static void Boot_SetRadioIdentity(void)
+{
+    static boolean done;
+    if (done) return;
+    done = true;
+
+    uint32_t build_id;
+    memcpy(&build_id, esp_app_get_description()->app_elf_sha256, sizeof build_id);
+
+    // FNV-1a over each lump's name, position and size -- the fields, not
+    // the hash-chain index, which depends on load order rather than content.
+    uint32_t wad_id = 2166136261u;
+    for (unsigned i = 0; i < numlumps; i++)
+    {
+        const unsigned char *p = (const unsigned char *)lumpinfo[i].name;
+        for (int k = 0; k < 8; k++) { wad_id ^= p[k]; wad_id *= 16777619u; }
+        const unsigned char *q = (const unsigned char *)&lumpinfo[i].position;
+        for (int k = 0; k < 8; k++) { wad_id ^= q[k]; wad_id *= 16777619u; }
+    }
+
+    my_build_id = build_id;
+    my_wad_id = wad_id;
+    radio_set_identity(build_id, wad_id);
 }
 
 void Boot_Start(void)
@@ -98,6 +152,7 @@ void Boot_Start(void)
     pagetic = INT_MAX;
 
     item_on = ITEM_SINGLE;
+    Boot_SetRadioIdentity();
     Boot_ShowMenu();
 }
 
@@ -111,7 +166,35 @@ static void Boot_StartConnect(void)
 {
     bootscreen = BOOT_CONNECT;
     connect_tic = 0;
-    // The radio hand-off (discovery, pairing, D_InitNetGame) plugs in here.
+    peer_on = 0;
+    message_tic = 0;
+    radio_clear_refusal();
+    radio_set_discoverable(true);
+}
+
+static void Boot_Offer(void)
+{
+    if (peer_count == 0) return;
+
+    radio_settings_t s = {
+        .skill      = (uint8_t)startskill,
+        .episode    = (uint8_t)startepisode,
+        .map        = (uint8_t)startmap,
+        .deathmatch = (uint8_t)deathmatch,
+        .nomonsters = (uint8_t)nomonsters,
+    };
+
+    if (radio_offer(peers[peer_on].mac, &s))
+    {
+        S_StartSound(NULL, sfx_pistol);
+        M_StringCopy(invited, peers[peer_on].name, sizeof invited);
+    }
+    else if (radio_refusal() != RADIO_REFUSED_NONE)
+    {
+        // Incompatible: radio_offer has set the refusal for the drawer.
+        S_StartSound(NULL, sfx_oof);
+        message_tic = MESSAGE_TICS;
+    }
 }
 
 static boolean Boot_MenuResponder(int key)
@@ -142,11 +225,46 @@ static boolean Boot_MenuResponder(int key)
 
 static boolean Boot_ConnectResponder(int key)
 {
-    if (key == KEY_ESCAPE)
+    radio_state_t st = radio_state();
+
+    switch (key)
     {
+      case KEY_ESCAPE:
         S_StartSound(NULL, sfx_swtchx);
-        Boot_ShowMenu();
+        if (st == RADIO_SCANNING || st == RADIO_OFF)
+            Boot_ShowMenu();            // back out of the connect screen
+        else
+            radio_disconnect();         // cancel the offer, decline, or hang up
+        return true;
+
+      case KEY_UPARROW:
+        if (st == RADIO_SCANNING && peer_count > 0)
+        {
+            peer_on = (peer_on + peer_count - 1) % peer_count;
+            S_StartSound(NULL, sfx_pstop);
+        }
+        return true;
+
+      case KEY_DOWNARROW:
+        if (st == RADIO_SCANNING && peer_count > 0)
+        {
+            peer_on = (peer_on + 1) % peer_count;
+            S_StartSound(NULL, sfx_pstop);
+        }
+        return true;
+
+      case KEY_ENTER:
+        if (st == RADIO_SCANNING)
+            Boot_Offer();
+        else if (st == RADIO_INCOMING)
+        {
+            S_StartSound(NULL, sfx_pistol);
+            radio_accept();
+        }
+        // RADIO_CONNECTED: the game launch lands here with the lockstep work.
+        return true;
     }
+
     return true;
 }
 
@@ -178,7 +296,20 @@ void Boot_Ticker(void)
     }
 
     if (bootscreen == BOOT_CONNECT)
+    {
         connect_tic++;
+
+        peer_count = radio_peers(peers, RADIO_MAX_PEERS);
+        if (peer_on >= peer_count)
+            peer_on = peer_count > 0 ? peer_count - 1 : 0;
+
+        // A refusal that arrived over the air (declined, timed out, lost)
+        // gets the same three seconds on screen as a local one.
+        if (message_tic == 0 && radio_refusal() != RADIO_REFUSED_NONE)
+            message_tic = MESSAGE_TICS;
+        if (message_tic > 0 && --message_tic == 0)
+            radio_clear_refusal();
+    }
 }
 
 static void Boot_DrawCentered(int y, const char *s)
@@ -204,25 +335,129 @@ static void Boot_DrawMenu(void)
     Boot_DrawCentered(SCREENHEIGHT - 24, "UP/DOWN TO CHOOSE, START TO PLAY");
 }
 
+static const char *Boot_RefusalText(radio_refusal_t why)
+{
+    switch (why)
+    {
+      case RADIO_REFUSED_DECLINED: return "THEY SAID NO";
+      case RADIO_REFUSED_BUSY:     return "THAT BADGE IS BUSY";
+      case RADIO_REFUSED_FIRMWARE: return "THAT BADGE RUNS DIFFERENT FIRMWARE";
+      case RADIO_REFUSED_WAD:      return "THAT BADGE HAS A DIFFERENT WAD";
+      case RADIO_REFUSED_TIMEOUT:  return "NO ANSWER FROM THAT BADGE";
+      case RADIO_REFUSED_LOST:     return "LOST THE OTHER BADGE";
+      default:                     return "";
+    }
+}
+
+static void Boot_DrawSettings(int y, const radio_settings_t *s)
+{
+    char line[40];
+    snprintf(line, sizeof line, "E%dM%d  SKILL %d  %s",
+             s->episode, s->map, s->skill + 1,
+             s->deathmatch ? "DEATHMATCH" : "CO-OP");
+    Boot_DrawCentered(y, line);
+}
+
 static void Boot_DrawConnect(void)
 {
     // A three-step ellipsis so the screen visibly ticks while it waits.
-    static const char *const waiting[3] = {
-        "SEARCHING FOR A BADGE.",
-        "SEARCHING FOR A BADGE..",
-        "SEARCHING FOR A BADGE...",
-    };
+    static const char *const dots[3] = { ".", "..", "..." };
+    const char *ell = dots[(connect_tic / TICRATE) % 3];
     int line_h = SHORT(hu_font[0]->height) + 4;
-    int y = 64;
+    int y = 48;
+    char line[48];
 
     V_DrawPatchDirect(LOGO_X, LOGO_Y,
                       W_CacheLumpName(DEH_String("M_DOOM"), PU_CACHE));
 
     Boot_DrawCentered(y, "MULTIPLAYER");
     y += line_h * 2;
-    Boot_DrawCentered(y, waiting[(connect_tic / TICRATE) % 3]);
 
-    Boot_DrawCentered(SCREENHEIGHT - 24, "HOME TO GO BACK");
+    radio_state_t st = radio_state();
+    radio_session_t sess;
+    radio_peer_t from;
+    radio_settings_t proposed;
+
+    switch (st)
+    {
+      case RADIO_OFF:
+        Boot_DrawCentered(y, "THIS BADGE HAS NO RADIO");
+        Boot_DrawCentered(SCREENHEIGHT - 24, "HOME TO GO BACK");
+        break;
+
+      case RADIO_SCANNING:
+        if (message_tic > 0)
+        {
+            Boot_DrawCentered(y, Boot_RefusalText(radio_refusal()));
+            y += line_h * 2;
+        }
+
+        if (peer_count == 0)
+        {
+            snprintf(line, sizeof line, "SEARCHING FOR A BADGE%s", ell);
+            Boot_DrawCentered(y, line);
+        }
+        else
+        {
+            for (int i = 0; i < peer_count; i++)
+            {
+                const char *note = peers[i].compatible          ? "" :
+                                   peers[i].build_id != my_build_id ? "  OTHER FIRMWARE"
+                                                                    : "  OTHER WAD";
+                snprintf(line, sizeof line, "%s%s", peers[i].name, note);
+                M_WriteText(ITEM_X, y + i * LINE_H, line);
+            }
+            V_DrawPatchDirect(ITEM_X - SKULL_X_OFF,
+                              y + peer_on * LINE_H + SKULL_Y_OFF,
+                              W_CacheLumpName(DEH_String(skullName[skull_frame]),
+                                              PU_CACHE));
+        }
+
+        snprintf(line, sizeof line, "YOU ARE %s", radio_name());
+        Boot_DrawCentered(SCREENHEIGHT - 40, line);
+        Boot_DrawCentered(SCREENHEIGHT - 24, peer_count > 0
+                          ? "START TO INVITE, HOME TO GO BACK"
+                          : "HOME TO GO BACK");
+        break;
+
+      case RADIO_OFFERING:
+        snprintf(line, sizeof line, "WAITING FOR %s%s", invited, ell);
+        Boot_DrawCentered(y, line);
+        Boot_DrawCentered(SCREENHEIGHT - 24, "HOME TO CANCEL");
+        break;
+
+      case RADIO_INCOMING:
+        if (radio_incoming(&from, &proposed))
+        {
+            snprintf(line, sizeof line, "%s WANTS TO PLAY", from.name);
+            Boot_DrawCentered(y, line);
+            Boot_DrawSettings(y + line_h * 2, &proposed);
+        }
+        Boot_DrawCentered(SCREENHEIGHT - 24, "START TO ACCEPT, HOME TO DECLINE");
+        break;
+
+      case RADIO_CONNECTED:
+        if (radio_session(&sess))
+        {
+            radio_link_stats_t ls = radio_link_stats();
+
+            snprintf(line, sizeof line, "CONNECTED TO %s", sess.peer.name);
+            Boot_DrawCentered(y, line);
+            y += line_h * 2;
+            snprintf(line, sizeof line, "YOU ARE PLAYER %d", sess.player + 1);
+            Boot_DrawCentered(y, line);
+            y += line_h;
+            Boot_DrawSettings(y, &sess.settings);
+            y += line_h * 2;
+            snprintf(line, sizeof line, "LINK %lu MS  LOSS %lu/%lu",
+                     (unsigned long)((ls.rtt_avg_us + 500) / 1000),
+                     (unsigned long)ls.lost, (unsigned long)ls.sent);
+            Boot_DrawCentered(y, line);
+        }
+        Boot_DrawCentered(SCREENHEIGHT - 40, "GAME START ARRIVES WITH LOCKSTEP");
+        Boot_DrawCentered(SCREENHEIGHT - 24, "HOME TO DISCONNECT");
+        break;
+    }
 }
 
 void Boot_Drawer(void)
