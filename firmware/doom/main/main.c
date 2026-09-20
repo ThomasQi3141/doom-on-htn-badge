@@ -77,7 +77,11 @@ void app_main(void)
         // rules out any test driven from the host over USB -- including the
         // one that matters most, two badges pairing with each other. Build
         // with -DBADGE_NET_FORCE_ROLE=1 to host or 2 to join.
-#ifdef BADGE_NET_FORCE_ROLE
+        // != 0 matters: idf.py -D writes to the CMake cache and stays there,
+        // so the way to get an ordinary build back is -DBADGE_NET_FORCE_ROLE=0
+        // rather than dropping the flag. If 0 merely meant "defined", that
+        // would silently select client and look like a pairing bug.
+#if defined(BADGE_NET_FORCE_ROLE) && BADGE_NET_FORCE_ROLE != 0
         held = 0;
         ESP_LOGW(TAG, "BADGE_NET_FORCE_ROLE=%d compiled in; ignoring buttons",
                  BADGE_NET_FORCE_ROLE);

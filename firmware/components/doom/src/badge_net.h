@@ -29,7 +29,13 @@
 //
 // A #define rather than a build option on purpose -- the doom component's
 // CMakeLists.txt is shared, and this is a thing you turn on for an afternoon.
-#define BADGE_NET_LOOPBACK 1
+//
+// LEAVE IT COMMENTED OUT. With it on there is no single player: the role is
+// forced to HOST before any button is read, pairing always succeeds, and the
+// lobby is skipped, so the badge is stuck in a two-player game it cannot be
+// talked out of. That is correct for the harness and wrong for a badge anyone
+// is going to hand to a person.
+// #define BADGE_NET_LOOPBACK 1
 
 // How many tics each packet carries. Every send repeats the last few tics, so
 // one lost frame is repaired by the next packet rather than by a retransmit
