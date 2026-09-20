@@ -80,5 +80,17 @@ void I_PrintBanner(char *text);
 
 void I_PrintDivider(void);
 
+// Print the I_Error message recorded before the last crash, if there was one.
+
+void I_ReportLastCrash(void);
+
+// Why the badge last restarted. I_ResetWasAbnormal() is false for a clean
+// power-on or a deliberate restart, and true for a crash, a watchdog, or a
+// power rail that could not hold up -- which look the same from the outside
+// and need opposite responses.
+
+const char *I_ResetReasonText(void);
+boolean I_ResetWasAbnormal(void);
+
 #endif
 

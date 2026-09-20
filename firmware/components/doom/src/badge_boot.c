@@ -10,8 +10,9 @@
 //
 // Multiplayer is the connect screen: it lists the badges the radio can hear,
 // offers a game to the one under the cursor, and once both sides agree it
-// shows who is player 1 and how the link is doing. Starting the game itself
-// is the lockstep work; until then START does nothing there.
+// shows who is player 1 and how the link is doing. START there hands over to
+// badge_net.c, which launches the same level on both badges and keeps them in
+// lockstep from that tic on.
 //
 // Everything is drawn with the menu code's own routines -- M_DOOM and the
 // skull cursor via V_DrawPatchDirect, text via M_WriteText on hu_font -- all
@@ -36,10 +37,12 @@
 #include "z_zone.h"
 #include "hu_stuff.h"
 #include "i_video.h"
+#include "i_system.h"
 
 #include <stdio.h>
 #include "esp_app_desc.h"
 #include "radio.h"
+#include "badge_net.h"
 
 bootscreen_t bootscreen = BOOT_NONE;
 
@@ -136,6 +139,26 @@ static void Boot_SetRadioIdentity(void)
 
 void Boot_Start(void)
 {
+    // End Game can land here straight out of a co-op level. Hang up before
+    // anything else, so the other badge hears about it now rather than
+    // discovering it two seconds later as a lost peer.
+    if (BadgeNet_Active())
+        BadgeNet_Drop("GAME ENDED");
+    BadgeNet_Cancel();
+    radio_disconnect();
+
+    // Back to one player, so Singleplayer behaves as it always did and a
+    // second co-op game starts from a clean slate.
+    netgame = false;
+    deathmatch = 0;
+    // The offerer's settings are adopted wholesale by the accepter, so a
+    // co-op game can leave this set on a badge that never chose it. Nothing
+    // else on this build sets it -- D_DoomMain is handed no arguments.
+    nomonsters = false;
+    consoleplayer = displayplayer = 0;
+    playeringame[0] = true;
+    playeringame[1] = playeringame[2] = playeringame[3] = false;
+
     // Mirror D_DoAdvanceDemo's reset of the bits that would otherwise carry
     // over from a game the player just ended.
     players[consoleplayer].playerstate = PST_LIVE;
@@ -158,8 +181,41 @@ void Boot_Start(void)
 
 static void Boot_StartSingleplayer(void)
 {
-    bootscreen = BOOT_NONE;
+    bootscreen = BOOT_STARTING;
     G_DeferedInitNew(startskill, startepisode, startmap);
+}
+
+// Both badges leave the connect screen here, each with the seat the radio
+// gave it and the settings the offerer chose. Everything the simulation needs
+// to match is set before the level is asked for: the two badges then run the
+// same code over the same WAD from the same tic, and only ticcmds cross the
+// air.
+static void Boot_StartCoop(void)
+{
+    radio_session_t sess;
+
+    if (!radio_session(&sess))
+    {
+        // The link went away between the ticker and here.
+        BadgeNet_Cancel();
+        return;
+    }
+
+    bootscreen = BOOT_STARTING;
+    radio_set_discoverable(false);
+
+    netgame = true;
+    deathmatch = sess.settings.deathmatch;
+    nomonsters = sess.settings.nomonsters;
+    consoleplayer = displayplayer = sess.player;
+    playeringame[0] = playeringame[1] = true;
+    playeringame[2] = playeringame[3] = false;
+
+    BadgeNet_Begin(sess.player);
+
+    // Not G_DeferedInitNew: that one resets every line above.
+    G_DeferedInitNetGame((skill_t)sess.settings.skill,
+                         sess.settings.episode, sess.settings.map);
 }
 
 static void Boot_StartConnect(void)
@@ -231,6 +287,7 @@ static boolean Boot_ConnectResponder(int key)
     {
       case KEY_ESCAPE:
         S_StartSound(NULL, sfx_swtchx);
+        BadgeNet_Cancel();
         if (st == RADIO_SCANNING || st == RADIO_OFF)
             Boot_ShowMenu();            // back out of the connect screen
         else
@@ -261,7 +318,12 @@ static boolean Boot_ConnectResponder(int key)
             S_StartSound(NULL, sfx_pistol);
             radio_accept();
         }
-        // RADIO_CONNECTED: the game launch lands here with the lockstep work.
+        else if (st == RADIO_CONNECTED && !BadgeNet_StartRequested())
+        {
+            // Either badge may start the game; the other one follows.
+            S_StartSound(NULL, sfx_pistol);
+            BadgeNet_RequestStart();
+        }
         return true;
     }
 
@@ -281,7 +343,17 @@ boolean Boot_Responder(event_t *ev)
     if (bootscreen == BOOT_MENU)
         return Boot_MenuResponder(ev->data1);
 
+    // Nothing to press while a level is being started, and least of all HOME:
+    // hanging up here would strand the other badge in a game it cannot leave.
+    if (bootscreen == BOOT_STARTING)
+        return true;
+
     return Boot_ConnectResponder(ev->data1);
+}
+
+void Boot_Finish(void)
+{
+    bootscreen = BOOT_NONE;
 }
 
 void Boot_Ticker(void)
@@ -293,6 +365,12 @@ void Boot_Ticker(void)
     {
         skull_frame ^= 1;
         skull_tic = SKULL_TICS;
+    }
+
+    if (bootscreen == BOOT_STARTING)
+    {
+        connect_tic++;      // keeps the ellipsis moving while we wait
+        return;
     }
 
     if (bootscreen == BOOT_CONNECT)
@@ -309,6 +387,13 @@ void Boot_Ticker(void)
             message_tic = MESSAGE_TICS;
         if (message_tic > 0 && --message_tic == 0)
             radio_clear_refusal();
+
+        // The start handshake: either badge asking is enough, and both leave
+        // the screen together.
+        if (radio_state() != RADIO_CONNECTED)
+            BadgeNet_Cancel();
+        else if (BadgeNet_ConnectTicker())
+            Boot_StartCoop();
     }
 }
 
@@ -333,6 +418,34 @@ static void Boot_DrawMenu(void)
                                       PU_CACHE));
 
     Boot_DrawCentered(SCREENHEIGHT - 24, "UP/DOWN TO CHOOSE, START TO PLAY");
+
+    // On batteries there is no serial port to read, so the badge has to say
+    // this itself. "LOW POWER" here means the rail collapsed, which is the
+    // batteries or the boost converter, not the game.
+    if (I_ResetWasAbnormal())
+    {
+        char line[48];
+        snprintf(line, sizeof line, "LAST RESTART: %s", I_ResetReasonText());
+        Boot_DrawCentered(SCREENHEIGHT - 40, line);
+    }
+}
+
+// Shown between asking for a level and having one. In singleplayer that is
+// a single frame; in co-op it lasts until the other badge's first tic lands,
+// which is the whole reason this screen has to exist.
+static void Boot_DrawStarting(void)
+{
+    static const char *const dots[3] = { ".", "..", "..." };
+    char line[40];
+
+    V_DrawPatchDirect(LOGO_X, LOGO_Y,
+                      W_CacheLumpName(DEH_String("M_DOOM"), PU_CACHE));
+
+    snprintf(line, sizeof line, "STARTING%s", dots[(connect_tic / TICRATE) % 3]);
+    Boot_DrawCentered(SCREENHEIGHT / 2, line);
+
+    if (BadgeNet_Active())
+        Boot_DrawCentered(SCREENHEIGHT - 24, "WAITING FOR THE OTHER BADGE");
 }
 
 static const char *Boot_RefusalText(radio_refusal_t why)
@@ -454,7 +567,15 @@ static void Boot_DrawConnect(void)
                      (unsigned long)ls.lost, (unsigned long)ls.sent);
             Boot_DrawCentered(y, line);
         }
-        Boot_DrawCentered(SCREENHEIGHT - 40, "GAME START ARRIVES WITH LOCKSTEP");
+        if (BadgeNet_StartRequested())
+        {
+            snprintf(line, sizeof line, "STARTING%s", ell);
+            Boot_DrawCentered(SCREENHEIGHT - 40, line);
+        }
+        else
+        {
+            Boot_DrawCentered(SCREENHEIGHT - 40, "START TO PLAY");
+        }
         Boot_DrawCentered(SCREENHEIGHT - 24, "HOME TO DISCONNECT");
         break;
     }
@@ -470,6 +591,8 @@ void Boot_Drawer(void)
 
     if (bootscreen == BOOT_MENU)
         Boot_DrawMenu();
+    else if (bootscreen == BOOT_STARTING)
+        Boot_DrawStarting();
     else
         Boot_DrawConnect();
 }

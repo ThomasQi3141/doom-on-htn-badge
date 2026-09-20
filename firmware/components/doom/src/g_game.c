@@ -73,6 +73,7 @@
 #include "g_game.h"
 
 #include "badge_boot.h"
+#include "badge_net.h"
 
 
 #define SAVEGAMESIZE	0x2c000
@@ -321,6 +322,19 @@ static int G_NextWeapon(int direction)
 // or reads it from the demo buffer. 
 // If recording a demo, write it out 
 // 
+// Which consistancy slot a tic uses.
+//
+// Vanilla indexes by gametic, which works because every player's gametic
+// starts at zero together. Two badges do not: a co-op session starts at
+// whatever gametic each badge's boot menu had reached, and those differ. Both
+// would then write and compare *different* slots for the same tic, and the
+// check would fail on the first moving frame. Counting from the session's own
+// first tic is the same number on both badges.
+static int G_ConsistancyTic (int tic)
+{
+    return BadgeNet_Active() ? tic - BadgeNet_TicBase() : tic;
+}
+
 void G_BuildTiccmd (ticcmd_t* cmd, int maketic) 
 { 
     int		i; 
@@ -334,7 +348,7 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
     memset(cmd, 0, sizeof(ticcmd_t));
 
     cmd->consistancy = 
-	consistancy[consoleplayer][maketic%BACKUPTICS]; 
+	consistancy[consoleplayer][G_ConsistancyTic(maketic)%BACKUPTICS]; 
  
     strafe = gamekeydown[key_strafe] || mousebuttons[mousebstrafe] 
 	|| joybuttons[joybstrafe]; 
@@ -639,6 +653,10 @@ void G_DoLoadLevel (void)
         skytexture = R_TextureNumForName(skytexturename);
     }
 
+    // A level exists from here on, so D_Display has something to draw and the
+    // boot screen can go.
+    Boot_Finish();
+
     levelstarttic = gametic;        // for time calculation
     
     if (wipegamestate == GS_LEVEL) 
@@ -856,7 +874,8 @@ boolean G_Responder (event_t* ev)
 void G_Ticker (void) 
 { 
     int		i;
-    int		buf; 
+    int		buf;
+    int		ctic;
     ticcmd_t*	cmd;
     
     // do player reborns if needed
@@ -905,7 +924,8 @@ void G_Ticker (void)
     
     // get commands, check consistancy,
     // and build new consistancy check
-    buf = (gametic/ticdup)%BACKUPTICS; 
+    ctic = G_ConsistancyTic(gametic/ticdup);
+    buf = ctic%BACKUPTICS; 
  
     for (i=0 ; i<MAXPLAYERS ; i++)
     {
@@ -947,11 +967,28 @@ void G_Ticker (void)
 
 	    if (netgame && !netdemo && !(gametic%ticdup) ) 
 	    { 
-		if (gametic > BACKUPTICS 
+		// ctic, not gametic: the first BACKUPTICS tics of a session
+		// are what fill the slots, and there is nothing to compare
+		// against until they have.
+		if (ctic > BACKUPTICS 
 		    && consistancy[i][buf] != cmd->consistancy) 
 		{ 
-		    I_Error ("consistency failure (%i should be %i)",
-			     cmd->consistancy, consistancy[i][buf]); 
+		    // On a PC this is fatal: the two games have diverged and
+		    // nothing after it means anything. On a badge at a booth,
+		    // dying on the spot is the worst possible answer -- the
+		    // player is left with a dead screen and no idea why. Drop
+		    // the link instead and keep this badge playable.
+		    //
+		    // Never I_Error here, not even as a fallback: netgame is
+		    // only ever set on this build by the co-op start, so a
+		    // mismatch always means these two badges diverged, and
+		    // both seats usually report it on the same tic. The second
+		    // report arrives with the link already gone and nothing
+		    // left to drop -- it is the same event, not a new one.
+		    printf("consistency failure for player %i "
+			   "(%i should be %i)\n",
+			   i + 1, cmd->consistancy, consistancy[i][buf]);
+		    BadgeNet_Drop("LOST SYNC WITH THE OTHER BADGE");
 		} 
 		if (players[i].mo) 
 		    consistancy[i][buf] = players[i].mo->x; 
@@ -1712,8 +1749,34 @@ G_DeferedInitNew
 } 
 
 
+// Set by G_DeferedInitNetGame: the badge's co-op start has already put
+// netgame, deathmatch, consoleplayer and playeringame[] where it wants them,
+// and G_DoNewGame's reset below would undo every one of them.
+static boolean deferred_netgame;
+
+void
+G_DeferedInitNetGame
+( skill_t	skill,
+  int		episode,
+  int		map) 
+{ 
+    deferred_netgame = true;
+    G_DeferedInitNew (skill, episode, map);
+} 
+
+
 void G_DoNewGame (void) 
 {
+    if (deferred_netgame)
+    {
+	deferred_netgame = false;
+	demoplayback = false;
+	netdemo = false;
+	G_InitNew (d_skill, d_episode, d_map);
+	gameaction = ga_nothing;
+	return;
+    }
+
     demoplayback = false; 
     netdemo = false;
     netgame = false;

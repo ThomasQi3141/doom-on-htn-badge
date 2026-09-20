@@ -492,6 +492,12 @@ void D_PageTicker (void)
 //
 void D_PageDrawer (void)
 {
+    // The badge never runs the attract loop, so nothing ever sets pagename.
+    // Reaching here at all means a boot screen was given up before the level
+    // it asked for existed; draw nothing rather than cache a lump called NULL.
+    if (pagename == NULL)
+        return;
+
     V_DrawPatch (0, 0, W_CacheLumpName(pagename, PU_CACHE));
 }
 

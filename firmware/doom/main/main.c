@@ -27,6 +27,7 @@ extern int myargc;
 extern char **myargv;
 void D_DoomMain(void);
 void I_ReportLastCrash(void);
+const char *I_ResetReasonText(void);
 void DG_Init(void);
 void doomgeneric_Tick(void);
 
@@ -52,6 +53,7 @@ void app_main(void)
     // and an I_Error and a hard fault need completely different hunting.
     // Only interesting after a panic. Printing a stale message on every
     // ordinary boot made it look like the badge had just crashed when it had not.
+    ESP_LOGI(TAG, "last restart: %s", I_ResetReasonText());
     if (esp_reset_reason() == ESP_RST_PANIC)
     {
         ESP_LOGW(TAG, "recovered from a panic");

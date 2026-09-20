@@ -40,6 +40,8 @@
 #include "net_sdl.h"
 #include "net_loop.h"
 
+#include "badge_net.h"
+
 // The complete set of data for a particular tic.
 
 typedef struct
@@ -185,6 +187,11 @@ static boolean BuildNewTic(void)
     }
 
 #endif
+
+    // The badge's own client: two badges, no server. Same place in the loop
+    // as the call above, for the same reason -- the cmd has to go out before
+    // it is stored, so the peer is never waiting on a tic we already hold.
+    BadgeNet_SendTiccmd(&cmd, maketic);
     ticdata[maketic % BACKUPTICS].cmds[localplayer] = cmd;
     ticdata[maketic % BACKUPTICS].ingame[localplayer] = true;
 
@@ -220,6 +227,8 @@ void NetUpdate (void)
     NET_SV_Run();
 
 #endif
+
+    BadgeNet_Run();
 
     // check time
     nowtime = GetAdjustedTime() / ticdup;
@@ -581,12 +590,22 @@ static int GetLowTic(void)
     }
 #endif
 
+    // In a badge co-op game net_client_connected is set by D_LockstepStart,
+    // so the engine's own "wait for the other player" path applies unchanged.
+    if (net_client_connected && recvtic < lowtic)
+    {
+        lowtic = recvtic;
+    }
+
     return lowtic;
 }
 
 static int frameon;
 static int frameskip[4];
 static int oldnettics;
+
+// Set by D_LockstepStart, consumed by the tic loop below.
+static boolean lockstep_armed;
 
 static void OldNetSync(void)
 {
@@ -718,6 +737,8 @@ void TryRunTics (void)
     realtics = entertic - oldentertics;
     oldentertics = entertic;
 
+    lockstep_armed = false;
+
     // in singletics mode, run a single tic every time this function
     // is called.
 
@@ -794,6 +815,18 @@ void TryRunTics (void)
             return;
         }
 
+        // A co-op session armed itself during the tic we have just run. The
+        // tics still queued here were built before it and hold no cmd for
+        // the other seat: running them would take the level through tics the
+        // other badge never runs, which is a divergence before the first
+        // frame -- and RunTic would read their empty ingame[] as the second
+        // player quitting. Stop here; the next TryRunTics starts in lockstep.
+        if (lockstep_armed)
+        {
+            lockstep_armed = false;
+            return;
+        }
+
         set = &ticdata[(gametic / ticdup) % BACKUPTICS];
 
         if (!net_client_connected)
@@ -818,6 +851,77 @@ void TryRunTics (void)
 
 	NetUpdate ();	// check for new console commands
     }
+}
+
+// --------------------------------------------------- two-badge lockstep
+//
+// net_client_connected is the flag every branch above already keys off for
+// "there is someone else in this game". Setting it here means the badge's
+// co-op reuses the sync code that shipped with Doom rather than a second
+// copy of it: GetLowTic waits for recvtic, BuildNewTic stops running ahead,
+// OldNetSync nudges the follower's clock, and SinglePlayerClear stays out of
+// the way. See badge_net.c.
+
+void D_LockstepStart(int seat)
+{
+    unsigned int i;
+
+    localplayer = seat;
+
+    for (i = 0; i < NET_MAXPLAYERS; ++i)
+    {
+        local_playeringame[i] = i < 2;
+    }
+
+    // Tic numbering restarts with the session. gametic keeps running from
+    // the boot menu, so the base is wherever it has got to; badge_net.c
+    // subtracts its own base before the number goes on the air.
+    //
+    // gametic + 1, not gametic: this runs from the boot screen's ticker,
+    // which runs inside RunTic, so gametic still names the tic being run
+    // right now and is incremented the moment RunTic returns. Starting at
+    // gametic leaves recvtic one behind it, and the very next TryRunTics
+    // dies on its own "lowtic < gametic" check -- one frame, then a reset.
+    memset(ticdata, 0, sizeof(ticdata));
+    maketic = recvtic = gametic / ticdup + 1;
+    lockstep_armed = true;
+
+    // Vanilla sync: the follower adapts its clock to the key player, which
+    // is what keeps two badges with different frame times together.
+    new_sync = false;
+    skiptics = 0;
+    frameon = 0;
+    memset(frameskip, 0, sizeof(frameskip));
+    oldnettics = 0;
+
+    net_client_connected = true;
+    lasttime = GetAdjustedTime() / ticdup;
+}
+
+void D_LockstepStop(void)
+{
+    unsigned int i;
+
+    net_client_connected = false;
+
+    for (i = 0; i < NET_MAXPLAYERS; ++i)
+    {
+        local_playeringame[i] = i == (unsigned int)localplayer;
+    }
+
+    // Nothing is owed any more: whatever was waiting on the peer runs now
+    // with SinglePlayerClear taking the other seat out of the game.
+    recvtic = maketic;
+}
+
+int D_MakeTic(void)
+{
+    return maketic;
+}
+
+int D_RecvTic(void)
+{
+    return recvtic;
 }
 
 void D_RegisterLoopCallbacks(loop_interface_t *i)
