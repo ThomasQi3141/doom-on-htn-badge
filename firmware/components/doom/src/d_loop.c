@@ -604,6 +604,9 @@ static int frameon;
 static int frameskip[4];
 static int oldnettics;
 
+// Set by D_LockstepStart, consumed by the tic loop below.
+static boolean lockstep_armed;
+
 static void OldNetSync(void)
 {
     unsigned int i;
@@ -734,6 +737,8 @@ void TryRunTics (void)
     realtics = entertic - oldentertics;
     oldentertics = entertic;
 
+    lockstep_armed = false;
+
     // in singletics mode, run a single tic every time this function
     // is called.
 
@@ -810,6 +815,18 @@ void TryRunTics (void)
             return;
         }
 
+        // A co-op session armed itself during the tic we have just run. The
+        // tics still queued here were built before it and hold no cmd for
+        // the other seat: running them would take the level through tics the
+        // other badge never runs, which is a divergence before the first
+        // frame -- and RunTic would read their empty ingame[] as the second
+        // player quitting. Stop here; the next TryRunTics starts in lockstep.
+        if (lockstep_armed)
+        {
+            lockstep_armed = false;
+            return;
+        }
+
         set = &ticdata[(gametic / ticdup) % BACKUPTICS];
 
         if (!net_client_connected)
@@ -859,8 +876,15 @@ void D_LockstepStart(int seat)
     // Tic numbering restarts with the session. gametic keeps running from
     // the boot menu, so the base is wherever it has got to; badge_net.c
     // subtracts its own base before the number goes on the air.
+    //
+    // gametic + 1, not gametic: this runs from the boot screen's ticker,
+    // which runs inside RunTic, so gametic still names the tic being run
+    // right now and is incremented the moment RunTic returns. Starting at
+    // gametic leaves recvtic one behind it, and the very next TryRunTics
+    // dies on its own "lowtic < gametic" check -- one frame, then a reset.
     memset(ticdata, 0, sizeof(ticdata));
-    maketic = recvtic = gametic / ticdup;
+    maketic = recvtic = gametic / ticdup + 1;
+    lockstep_armed = true;
 
     // Vanilla sync: the follower adapts its clock to the key player, which
     // is what keeps two badges with different frame times together.

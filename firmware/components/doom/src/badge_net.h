@@ -36,6 +36,11 @@ void BadgeNet_Cancel(void);
 // player numbering. Called just before the level is started, on both badges.
 void BadgeNet_Begin(int seat);
 
+// The tic this session started at. Tic numbers on the air are counted from
+// it, and so is anything that has to line up between the two badges -- the
+// two start at different gametics, so gametic itself never will.
+int BadgeNet_TicBase(void);
+
 // Our cmd for `maketic`, straight from BuildNewTic.
 void BadgeNet_SendTiccmd(ticcmd_t *cmd, int maketic);
 

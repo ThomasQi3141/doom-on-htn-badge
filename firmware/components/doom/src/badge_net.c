@@ -156,6 +156,11 @@ void BadgeNet_Begin(int seat)
              seat + 1, s_base);
 }
 
+int BadgeNet_TicBase(void)
+{
+    return s_base;
+}
+
 void BadgeNet_SendTiccmd(ticcmd_t *cmd, int maketic)
 {
     uint8_t frame[LOCKSTEP_MAX_FRAME];

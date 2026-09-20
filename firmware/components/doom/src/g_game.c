@@ -322,6 +322,19 @@ static int G_NextWeapon(int direction)
 // or reads it from the demo buffer. 
 // If recording a demo, write it out 
 // 
+// Which consistancy slot a tic uses.
+//
+// Vanilla indexes by gametic, which works because every player's gametic
+// starts at zero together. Two badges do not: a co-op session starts at
+// whatever gametic each badge's boot menu had reached, and those differ. Both
+// would then write and compare *different* slots for the same tic, and the
+// check would fail on the first moving frame. Counting from the session's own
+// first tic is the same number on both badges.
+static int G_ConsistancyTic (int tic)
+{
+    return BadgeNet_Active() ? tic - BadgeNet_TicBase() : tic;
+}
+
 void G_BuildTiccmd (ticcmd_t* cmd, int maketic) 
 { 
     int		i; 
@@ -335,7 +348,7 @@ void G_BuildTiccmd (ticcmd_t* cmd, int maketic)
     memset(cmd, 0, sizeof(ticcmd_t));
 
     cmd->consistancy = 
-	consistancy[consoleplayer][maketic%BACKUPTICS]; 
+	consistancy[consoleplayer][G_ConsistancyTic(maketic)%BACKUPTICS]; 
  
     strafe = gamekeydown[key_strafe] || mousebuttons[mousebstrafe] 
 	|| joybuttons[joybstrafe]; 
@@ -857,7 +870,8 @@ boolean G_Responder (event_t* ev)
 void G_Ticker (void) 
 { 
     int		i;
-    int		buf; 
+    int		buf;
+    int		ctic;
     ticcmd_t*	cmd;
     
     // do player reborns if needed
@@ -906,7 +920,8 @@ void G_Ticker (void)
     
     // get commands, check consistancy,
     // and build new consistancy check
-    buf = (gametic/ticdup)%BACKUPTICS; 
+    ctic = G_ConsistancyTic(gametic/ticdup);
+    buf = ctic%BACKUPTICS; 
  
     for (i=0 ; i<MAXPLAYERS ; i++)
     {
@@ -948,7 +963,10 @@ void G_Ticker (void)
 
 	    if (netgame && !netdemo && !(gametic%ticdup) ) 
 	    { 
-		if (gametic > BACKUPTICS 
+		// ctic, not gametic: the first BACKUPTICS tics of a session
+		// are what fill the slots, and there is nothing to compare
+		// against until they have.
+		if (ctic > BACKUPTICS 
 		    && consistancy[i][buf] != cmd->consistancy) 
 		{ 
 		    // On a PC this is fatal: the two games have diverged and
