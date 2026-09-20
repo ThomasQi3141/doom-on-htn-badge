@@ -11,7 +11,18 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-PY="${PY:-/private/tmp/claude-501/-Users-tq-Documents-GitHub-doom-on-htn-badge/71c78d64-9243-4c36-a33e-68fb1d0236ee/scratchpad/esp-venv/bin/python}"
+# Python with esptool installed: $PY, else ~/esp/esp-venv, else whatever
+# python3 is on PATH.
+PY="${PY:-}"
+if [[ -z "$PY" ]]; then
+  if [[ -x "$HOME/esp/esp-venv/bin/python" ]]; then PY="$HOME/esp/esp-venv/bin/python"
+  else PY="$(command -v python3)"; fi
+fi
+if ! "$PY" -m esptool version >/dev/null 2>&1; then
+  echo "esptool not found for $PY"
+  echo "Create a venv with:  python3 -m venv ~/esp/esp-venv && ~/esp/esp-venv/bin/pip install esptool"
+  exit 1
+fi
 PORT="${1:-$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)}"
 
 if [[ -z "${PORT:-}" ]]; then

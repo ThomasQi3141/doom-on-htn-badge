@@ -72,6 +72,8 @@
 
 #include "g_game.h"
 
+#include "badge_boot.h"
+
 
 #define SAVEGAMESIZE	0x2c000
 
@@ -1020,7 +1022,10 @@ void G_Ticker (void)
 	break; 
  
       case GS_DEMOSCREEN: 
-	D_PageTicker (); 
+	if (bootscreen != BOOT_NONE)
+	    Boot_Ticker ();
+	else
+	    D_PageTicker (); 
 	break;
     }        
 } 
