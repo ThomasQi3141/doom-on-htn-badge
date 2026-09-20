@@ -13,7 +13,7 @@ BSP, so SEGS/SSECTORS/NODES/BLOCKMAP/REJECT are rebuilt with zdbsp.
 
   tools/wad/cutmap.py DOOM1.WAD out.wad --sectors 30
 """
-import sys, os, struct, subprocess, argparse
+import sys, os, struct, subprocess, argparse, shutil
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wadlib import Wad, strip_wad, build_wad, decode_patch_into, encode_patch
 
@@ -501,10 +501,12 @@ def main():
                     help="monsters to ring around the player start")
     ap.add_argument("--monsters", type=int, default=0,
                     help="extra monsters to place on known-good floor spots")
-    ap.add_argument("--zdbsp", default=os.path.expanduser(
-        "/private/tmp/claude-501/-Users-tq-Documents-GitHub-doom-on-htn-badge/"
-        "71c78d64-9243-4c36-a33e-68fb1d0236ee/scratchpad/nb/build/zdbsp"))
+    ap.add_argument("--zdbsp", default=os.environ.get("ZDBSP") or
+                    shutil.which("zdbsp"),
+                    help="node builder (default: $ZDBSP, then PATH)")
     a = ap.parse_args()
+    if not a.zdbsp:
+        sys.exit("zdbsp not found: pass --zdbsp, set $ZDBSP, or put it on PATH")
 
     wad = Wad(a.src)
     m = load_map(wad, a.map)

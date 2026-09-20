@@ -19,7 +19,7 @@ builder is needed here. Everything is validated against the geometry before the
 WAD is written -- placing a monster inside a pillar is silent in Doom and very
 annoying to debug on hardware.
 """
-import sys, os, struct, subprocess, argparse, math
+import sys, os, struct, subprocess, argparse, math, shutil
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from wadlib import Wad, strip_wad, build_wad, decode_patch_into, encode_patch
 
@@ -219,10 +219,12 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("src"); ap.add_argument("dst")
     ap.add_argument("--map", default="E1M1")
-    ap.add_argument("--zdbsp", default="/private/tmp/claude-501/"
-        "-Users-tq-Documents-GitHub-doom-on-htn-badge/"
-        "71c78d64-9243-4c36-a33e-68fb1d0236ee/scratchpad/nb/build/zdbsp")
+    ap.add_argument("--zdbsp", default=os.environ.get("ZDBSP") or
+                    shutil.which("zdbsp"),
+                    help="node builder (default: $ZDBSP, then PATH)")
     a = ap.parse_args()
+    if not a.zdbsp:
+        sys.exit("zdbsp not found: pass --zdbsp, set $ZDBSP, or put it on PATH")
 
     m, main_s, plat_s = build()
     bad = validate(m)
