@@ -148,6 +148,15 @@ int             testcontrols_mousespeed;
 wbstartstruct_t wminfo;               	// parms for world map / intermission 
  
 byte		consistancy[MAXPLAYERS][BACKUPTICS]; 
+
+// Belt and braces for a restart without a reboot. The check at G_Ticker is
+// gated on gametic > BACKUPTICS, so a reset gametic already means the stale
+// bytes are overwritten before anyone compares them -- but that is a subtle
+// dependency to leave implicit when the cost of being explicit is a memset.
+void G_ResetNetState(void)
+{
+    memset(consistancy, 0, sizeof(consistancy));
+}
  
 #define MAXPLMOVE		(forwardmove[1]) 
  

@@ -52,7 +52,19 @@ planefunction_t		ceilingfunc;
 // Real Doom geometry overflowed 24 in ordinary play. Both creation sites are
 // bounded now, so going over is a merged floor for one frame rather than a
 // crash -- but the limit should still cover the common case.
-#define MAXVISPLANES	40
+//
+// Co-op cuts this to 24. Bringing WiFi up costs 20,480 bytes of the largest
+// contiguous heap block, which is what the zone is carved from, and at 40
+// planes the zone lands at 32,768 and Doom dies asking for 10,264. Sixteen
+// planes is 13,568 bytes handed straight back, because .bss ends where the
+// heap region begins.
+//
+// The "overflowed 24 in ordinary play" note above is about real Doom levels.
+// The arena is a purpose-built plus-shape with four pillars and far less
+// visible geometry, so this is a bet on that map specifically -- and
+// badge_vp_overflow counts every time the bet is wrong. Watch it before
+// trusting it on anything else.
+#define MAXVISPLANES	24
 visplane_t		visplanes[MAXVISPLANES];
 visplane_t*		lastvisplane;
 visplane_t*		floorplane;
@@ -60,7 +72,9 @@ visplane_t*		ceilingplane;
 
 // ?
 // 320*64 shorts is 40,960 bytes of clip storage for sprite silhouettes.
-#define MAXOPENINGS	SCREENWIDTH*8
+// Halved again for co-op: 2,560 more bytes for the zone. R_DrawPlanes already
+// returns early rather than overrunning when this fills.
+#define MAXOPENINGS	SCREENWIDTH*4
 short			openings[MAXOPENINGS];
 short*			lastopening;
 

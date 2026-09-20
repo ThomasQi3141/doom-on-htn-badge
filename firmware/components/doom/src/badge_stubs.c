@@ -76,11 +76,9 @@ void StatCopy(void *stats)                        { (void)stats; }
 void StatDump(void)                               { }
 
 // ------------------------------------------------- netgame globals
-// Their definitions lived in the net client, which is gone. The engine still
-// branches on them, and with both false every one of those branches takes the
-// single-player path.
-boolean drone = false;
-boolean net_client_connected = false;
+// `drone` and `net_client_connected` used to be defined here, false forever,
+// so that every engine branch on them took the single-player path. Co-op
+// needs them to change at runtime, so badge_net.c owns them now.
 
 // Lived in i_sound.c. Nothing reads it now except S_ChangeMusic's guard.
 int snd_musicdevice = 0;

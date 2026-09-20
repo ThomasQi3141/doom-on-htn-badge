@@ -40,15 +40,11 @@ typedef struct
     // consistancy is a short, not a byte
     byte consistancy;           // checks for net game
 
-    // villsa - Strife specific:
-
-    byte buttons2;
-    int inventory;
-   
-    // Heretic/Hexen specific:
-
-    byte lookfly;               // look/fly up/down/centering
-    byte arti;                  // artitype_t to use
+    // Upstream also carries buttons2/inventory (Strife) and lookfly/arti
+    // (Heretic/Hexen). Nothing in this tree reads or writes them, and the int
+    // forced the struct to 16 bytes. Dropping them halves it, which is what
+    // pays for a 32-deep ticdata[] ring -- and it is the wire format two
+    // badges agree on, so badge_net.c static-asserts the size.
 } ticcmd_t;
 
 

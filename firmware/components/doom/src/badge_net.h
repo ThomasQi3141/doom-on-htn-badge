@@ -1,0 +1,145 @@
+// Two-badge co-op: the part that knows about Doom.
+//
+// badge_radio.c (in the badge component) carries bytes. This carries tics.
+//
+// The model is host-authoritative lockstep. Each badge builds its own ticcmd,
+// the host decides which inputs land in which tic and echoes both players'
+// inputs back, and both badges simulate that tic. Doom is deterministic given
+// identical inputs, so they stay in step by construction. There is no
+// prediction and no rollback -- on hardware this slow, a mispredicted tic
+// costs more to re-simulate than it could ever save.
+
+#ifndef __BADGE_NET__
+#define __BADGE_NET__
+
+#include "doomtype.h"
+#include "d_ticcmd.h"
+#include "net_defs.h"
+
+// Bumped whenever the wire format changes. Two badges with different values
+// refuse to pair rather than desync in a way that looks like a game bug.
+#define BADGE_NET_PROTO 2   // 2: TICCMD carries an ack; see badge_net.c
+
+#define BADGE_NET_PLAYERS 2
+
+// Uncomment to build the determinism harness: no radio, no peer, player 2's
+// input mirrors player 1's, and everything between BuildNewTic and the
+// consistancy check runs as it will on the air. A desync seen with this on is
+// ours; a desync seen only with it off is the air's.
+//
+// A #define rather than a build option on purpose -- the doom component's
+// CMakeLists.txt is shared, and this is a thing you turn on for an afternoon.
+//
+// LEAVE IT COMMENTED OUT. With it on there is no single player: the role is
+// forced to HOST before any button is read, pairing always succeeds, and the
+// lobby is skipped, so the badge is stuck in a two-player game it cannot be
+// talked out of. That is correct for the harness and wrong for a badge anyone
+// is going to hand to a person.
+// #define BADGE_NET_LOOPBACK 1
+
+// How many tics each packet carries. Every send repeats the last few tics, so
+// one lost frame is repaired by the next packet rather than by a retransmit
+// request -- a round trip costs a whole render period on each side, and at
+// 23 fps that is far more expensive than 32 spare bytes.
+#define BADGE_NET_TICS_PER_PACKET 4
+
+typedef enum
+{
+    BADGE_NET_OFF = 0,   // single player, exactly as before
+    BADGE_NET_HOST,      // player 0; owns the tic schedule
+    BADGE_NET_CLIENT,    // player 1
+} badge_net_role_t;
+
+// Ask for a role. Called before D_DoomMain, from whatever chooses the mode --
+// today the boot buttons, later the lobby screen.
+void BadgeNet_RequestRole(badge_net_role_t role);
+badge_net_role_t BadgeNet_RequestedRole(void);
+
+// Runs the pairing handshake if a role was requested. Returns false when no
+// role was asked for, the radio would not start, the peer disagreed about the
+// WAD, or nobody answered in time -- in every one of those cases the caller
+// falls back to single player. Bounded: it never blocks longer than the
+// timeout below.
+//
+// Called from D_StartNetGame, which is late enough that the WAD is mapped and
+// its directory can be hashed, and early enough that the answer still shapes
+// the game settings.
+boolean BadgeNet_Pair(void);
+
+// Why the last BadgeNet_Pair() returned false. Every one of these used to
+// produce the same "NO PARTNER FOUND" card, which made a badge whose radio
+// never started look identical to one whose partner was simply late -- and
+// made a WAD mismatch, which is a thing the player can actually fix,
+// indistinguishable from bad luck.
+typedef enum
+{
+    BADGE_NET_FAIL_NONE = 0,
+    BADGE_NET_FAIL_NO_ROLE,
+    BADGE_NET_FAIL_NO_RADIO,
+    BADGE_NET_FAIL_NO_WAD,
+    BADGE_NET_FAIL_WAD_MISMATCH,
+    BADGE_NET_FAIL_CANCELLED,
+    BADGE_NET_FAIL_TIMEOUT,
+} badge_net_fail_t;
+
+badge_net_fail_t BadgeNet_FailReason(void);
+
+// Called repeatedly while pairing waits, roughly every 50 ms, with how long
+// the wait has been running. Return false to give up.
+//
+// Pairing blocks the game task, so without this the screen is frozen for the
+// whole wait: no countdown, no sign the badge is alive, and no way out. It
+// exists so the menu can repaint and poll for a cancel.
+typedef boolean (*badge_net_progress_t)(int elapsed_ms);
+
+void BadgeNet_SetProgress(badge_net_progress_t cb);
+
+// True once paired and still hearing from the peer.
+boolean BadgeNet_Active(void);
+boolean BadgeNet_IsHost(void);
+
+// 0 for the host, 1 for the client, 0 when not paired.
+int BadgeNet_ConsolePlayer(void);
+
+// The peer's identity, for logging. NULL when not paired.
+const uint8_t *BadgeNet_PeerMac(void);
+
+// ---------------------------------------------------------------- tic exchange
+//
+// The contract between d_loop.c and badge_net.c. Both sides of it are written
+// independently, so it is fixed here first.
+
+// Called from BuildNewTic once a local ticcmd exists for `tic`, before it is
+// stored into ticdata[]. The host records it as player 0; the client
+// broadcasts it. Never blocks.
+void BadgeNet_SendTiccmd(ticcmd_t *cmd, int tic);
+
+// Called from NetUpdate. Drains the radio, merges what has arrived, and calls
+// D_ReceiveTic() zero or more times -- always in ascending tic order with no
+// gaps, because D_ReceiveTic carries no tic number and blindly increments
+// recvtic. Also owns the peer-timeout check. Never blocks.
+void BadgeNet_Run(void);
+
+// Arms the peer-silence clock. Called once, immediately before the first tic
+// runs -- see the definition for why pairing time is far too early.
+void BadgeNet_GameStart(void);
+
+// Called from D_QuitNetGame.
+void BadgeNet_Shutdown(void);
+
+// Defined in d_loop.c. Upstream declares it in net_client.h, which this port
+// does not build, so it is declared here instead of as a stray extern in the
+// one file that calls it. Pass (NULL, NULL) to signal a disconnect.
+void D_ReceiveTic(ticcmd_t *ticcmds, boolean *players_mask);
+
+// Diagnostics for the once-a-second bring-up log.
+int  BadgeNet_LastRecvTic(void);
+int  BadgeNet_StallTics(void);     // tics spent waiting on the peer
+
+// Fills in the parts of `settings` that pairing decided: num_players,
+// consoleplayer, and -- on the client -- the skill, episode and map the host
+// chose. Safe to call unpaired, in which case it sets the single-player
+// values the engine used before any of this existed.
+void BadgeNet_FillSettings(net_gamesettings_t *settings);
+
+#endif

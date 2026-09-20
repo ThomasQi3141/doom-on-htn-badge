@@ -23,6 +23,8 @@
 
 #include "d_event.h"
 #include "d_loop.h"
+#include "badge_net.h"
+#include "doomstat.h"
 #include "d_ticcmd.h"
 
 #include "i_system.h"
@@ -185,6 +187,21 @@ static boolean BuildNewTic(void)
     }
 
 #endif
+
+    // FEATURE_MULTIPLAYER stays off: it gates the NET_CL_* client, whose
+    // source files are not in this tree. badge_net.c replaces it, so the
+    // block above is dead and this is the live path.
+    //
+    // The order matters. The command goes to the network before it is stored
+    // into ticdata[], so the host's own tic travels the same route as the
+    // client's: built, handed to badge_net, then buffered. If it were stored
+    // first, the host could consume a tic badge_net had not yet scheduled,
+    // and the two badges would number the same input differently.
+    if (net_client_connected)
+    {
+        BadgeNet_SendTiccmd(&cmd, maketic);
+    }
+
     ticdata[maketic % BACKUPTICS].cmds[localplayer] = cmd;
     ticdata[maketic % BACKUPTICS].ingame[localplayer] = true;
 
@@ -220,6 +237,13 @@ void NetUpdate (void)
     NET_SV_Run();
 
 #endif
+
+    // Drains the radio and calls D_ReceiveTic() for whatever completed, which
+    // is what advances recvtic and so releases GetLowTic below.
+    if (net_client_connected)
+    {
+        BadgeNet_Run();
+    }
 
     // check time
     nowtime = GetAdjustedTime() / ticdup;
@@ -304,6 +328,12 @@ void D_ReceiveTic(ticcmd_t *ticcmds, boolean *players_mask)
 
 void D_StartGameLoop(void)
 {
+    // The last moment before the first tic. badge_net's peer-silence timeout
+    // has to start counting from here, not from when pairing finished: the
+    // pairing result card and the level load between the two take longer than
+    // the timeout itself.
+    BadgeNet_GameStart();
+
     lasttime = GetAdjustedTime() / ticdup;
 }
 
@@ -437,12 +467,45 @@ void D_StartNetGame(net_gamesettings_t *settings,
     //    printf("Syncing netgames like Vanilla Doom.\n");
     //}
 #else
-    settings->consoleplayer = 0;
-	settings->num_players = 1;
+	int i;
+
+	recvtic = 0;
+
 	settings->player_classes[0] = player_class;
-	settings->new_sync = 0;
 	settings->extratics = 1;
 	settings->ticdup = 1;
+
+	// new_sync 0 selects OldNetSync below, which is what slaves the client's
+	// clock to the host's: the key player is the lowest index in
+	// local_playeringame[], so the client runs slightly fast when it falls
+	// behind and skips tics when it runs ahead. new_sync 1 needs an offsetms
+	// fed by the net client that is not in this tree.
+	settings->new_sync = 0;
+
+	// Single player unless pairing succeeded. Both cases go through here so
+	// there is exactly one place that decides who this badge is.
+	BadgeNet_Pair();
+	BadgeNet_FillSettings(settings);
+
+	net_client_connected = BadgeNet_Active();
+
+	// D_InitNetGame could only report intent. This is the truth, and it has
+	// to be right before G_InitNew runs: netgame drives co-op item respawn,
+	// the "monsters remember" flags and G_DoReborn's respawn path, and a badge
+	// that failed to pair must play exactly as it did before any of this.
+	netgame = BadgeNet_Active();
+
+	// Upstream's #else branch set consoleplayer and stopped, leaving
+	// localplayer and local_playeringame[] at their zero-initialised values.
+	// With one player that is accidentally correct. With two it is not:
+	// GetLowTic and PlayersInGame both read local_playeringame[], and the
+	// client would never be recognised as being in the game at all.
+	localplayer = settings->consoleplayer;
+
+	for (i = 0; i < NET_MAXPLAYERS; ++i)
+	{
+	    local_playeringame[i] = i < settings->num_players;
+	}
 
 	ticdup = settings->ticdup;
 	new_sync = settings->new_sync;
@@ -462,6 +525,12 @@ boolean D_InitNetGame(net_connect_data_t *connect_data)
     I_AtExit(D_QuitNetGame, true);
 
     player_class = connect_data->player_class;
+
+    // D_ConnectNetGame turns this into `netgame`, and it runs before d_main
+    // has even chosen startskill -- far too early to hold the handshake, whose
+    // START message has to carry the terms of the game. So report intent here
+    // and let D_StartNetGame correct `netgame` once pairing has actually run.
+    result = (BadgeNet_RequestedRole() != BADGE_NET_OFF);
 
 #ifdef FEATURE_MULTIPLAYER
 
@@ -563,6 +632,8 @@ void D_QuitNetGame (void)
     NET_SV_Shutdown();
     NET_CL_Disconnect();
 #endif
+
+    BadgeNet_Shutdown();
 }
 
 static int GetLowTic(void)
@@ -571,7 +642,11 @@ static int GetLowTic(void)
 
     lowtic = maketic;
 
-#ifdef FEATURE_MULTIPLAYER
+    // Unconditional rather than widened to `#if defined(FEATURE_MULTIPLAYER)
+    // || defined(BADGE_NET)`: net_client_connected is already the runtime
+    // test this needs, and it is false in a single-player build, so the
+    // clamp costs one compare and the preprocessor buys nothing. Keeping one
+    // body also means the net path cannot rot behind a macro nobody sets.
     if (net_client_connected)
     {
         if (drone || recvtic < lowtic)
@@ -579,11 +654,15 @@ static int GetLowTic(void)
             lowtic = recvtic;
         }
     }
-#endif
 
     return lowtic;
 }
 
+// File scope only so D_ResetLoop can clear it. Upstream keeps it as a
+// TryRunTics local static, which is fine when there is only ever one game --
+// after a restart a stale value makes the first frame believe a large number
+// of tics are owed and the game lurches.
+static int oldentertics;
 static int frameon;
 static int frameskip[4];
 static int oldnettics;
@@ -638,6 +717,28 @@ static void OldNetSync(void)
 }
 
 // Returns true if there are players in the game:
+
+// Everything the tic loop carries between games. Upstream initialises all of
+// this exactly once at boot, because upstream never starts a second game
+// without restarting the process. Switching mode in-game does, and a stale
+// maketic or a ticdata slot left over from the previous session is read as a
+// real tic by the next one -- which desyncs on the first frame.
+void D_ResetLoop(void)
+{
+    memset(ticdata, 0, sizeof(ticdata));
+    memset(local_playeringame, 0, sizeof(local_playeringame));
+    memset(frameskip, 0, sizeof(frameskip));
+
+    maketic = 0;
+    recvtic = 0;
+    gametic = 0;
+    localplayer = 0;
+    skiptics = 0;
+    lasttime = 0;
+    frameon = 0;
+    oldnettics = 0;
+    oldentertics = 0;
+}
 
 static boolean PlayersInGame(void)
 {
@@ -708,7 +809,6 @@ void TryRunTics (void)
     int	i;
     int	lowtic;
     int	entertic;
-    static int oldentertics;
     int realtics;
     int	availabletics;
     int	counts;

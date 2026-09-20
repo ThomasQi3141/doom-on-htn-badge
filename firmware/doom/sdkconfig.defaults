@@ -35,3 +35,41 @@ CONFIG_ESP_ERR_TO_NAME_LOOKUP=n
 CONFIG_ESP_DEBUG_STUBS_ENABLE=n
 CONFIG_ESP_SYSTEM_USE_EH_FRAME=n
 CONFIG_COMPILER_STACK_CHECK_MODE_NONE=y
+
+# --- WiFi, stripped down to ESP-NOW ---------------------------------------
+# Co-op only ever broadcasts ESP-NOW frames: no AP, no lwIP, no netif, no
+# station connect. Everything below either removes code the badge will never
+# call or hands IRAM back to Doom's zone.
+#
+# IRAM and DRAM share one 400 KB pool on the C3, so pushing the WiFi hot paths
+# into flash returns ~27 KB directly to the zone. It costs some throughput,
+# which ESP-NOW at 78 bytes a tic will not notice.
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+
+# No credentials are ever stored, so the NVS-backed config is dead weight.
+CONFIG_ESP_WIFI_NVS_ENABLED=n
+CONFIG_ESP_WIFI_SOFTAP_SUPPORT=n
+
+# Buffers: the default 10/32/32 is sized for TCP throughput. ESP-NOW sends one
+# 78-byte frame per tic and we drain the queue every tic, so the floor the
+# driver will accept is enough. Each static RX buffer is 1,600 bytes of heap,
+# and the heap is what the zone is carved from -- measured, this is ~4 KB back.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=2
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=4
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=4
+
+# Management frames are for joining networks. We never join one: no scan, no
+# auth, no association, just an unencrypted broadcast peer on a fixed channel.
+CONFIG_ESP_WIFI_RX_MGMT_BUF_NUM_DEF=2
+CONFIG_ESP_WIFI_MGMT_SBUF_NUM=16
+
+# Aggregation only helps bulk transfer, and it costs both buffers and latency.
+CONFIG_ESP_WIFI_AMPDU_TX_ENABLED=n
+CONFIG_ESP_WIFI_AMPDU_RX_ENABLED=n
+
+# Unencrypted broadcast peer only.
+CONFIG_ESP_WIFI_ESPNOW_MAX_ENCRYPT_NUM=0
+CONFIG_ESP_WIFI_ENABLE_WPA3_SAE=n
+CONFIG_ESP_WIFI_ENABLE_WPA3_OWE_STA=n
+CONFIG_ESP_WIFI_ENTERPRISE_SUPPORT=n

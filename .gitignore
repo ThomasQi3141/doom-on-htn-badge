@@ -5,3 +5,7 @@ backup/
 # Built from the shareware IWAD, so it carries id Software's assets.
 # Regenerate with tools/wad/mkarena.py -- see dist/README.md.
 dist/doom-arena.wad
+
+# Python bytecode from the WAD and test tooling.
+__pycache__/
+*.pyc

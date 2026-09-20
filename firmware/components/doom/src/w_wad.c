@@ -95,7 +95,12 @@ unsigned int W_LumpNameHash(const char *s)
 // The badge loads exactly one WAD, known at build time, so a static array
 // removes the allocation, the reserve and the failure mode together. Entries
 // never move, so there is nothing to copy and no cache pointers to fix up.
-#define BADGE_MAX_LUMPS 1200
+// The arena WAD mkarena.py builds has 1,056 lumps, read straight off the
+// flashed partition header. 1,088 leaves room for a few more without paying
+// for 144 entries that will never be filled -- each is 28 bytes of .bss, and
+// .bss is what the zone heap's region starts after. W_AddFile I_Errors with
+// the real count if a future WAD outgrows this, so it fails loudly.
+#define BADGE_MAX_LUMPS 1088
 static lumpinfo_t badge_lumpinfo[BADGE_MAX_LUMPS];
 
 static void ExtendLumpInfo(int newnumlumps)

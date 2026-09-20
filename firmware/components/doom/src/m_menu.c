@@ -57,6 +57,7 @@
 #include "sounds.h"
 
 #include "m_menu.h"
+#include "badge_net.h"
 
 
 extern patch_t*		hu_font[HU_FONTSIZE];
@@ -907,7 +908,13 @@ void M_DrawNewGame(void)
 
 void M_NewGame(int choice)
 {
-    if (netgame && !demoplayback)
+    // Upstream refuses because one player cannot unilaterally restart a game
+    // other people are playing. That reason disappears the moment the peer is
+    // gone: badge_net leaves `netgame` true after a disconnect so the level
+    // keeps its co-op rules, which left a lone survivor unable to start a new
+    // game or end this one without a power cycle. Ask badge_net whether there
+    // is still anybody to be rude to.
+    if (netgame && BadgeNet_Active() && !demoplayback)
     {
 	M_StartMessage(DEH_String(NEWGAME),NULL,false);
 	return;
@@ -1051,7 +1058,7 @@ void M_EndGame(int choice)
 	return;
     }
 	
-    if (netgame)
+    if (netgame && BadgeNet_Active())
     {
 	M_StartMessage(DEH_String(NETEND),NULL,false);
 	return;

@@ -50,7 +50,7 @@ def main():
     out = build_wad(picked)
     with open(dst, "wb") as f:
         f.write(out)
-    part = 0x350000
+    part = 0x310000
     print(f"\n{dst}: {len(out):,} bytes, {len(picked)} lumps "
           f"({len(out) / part * 100:.1f}% of the {part:,}-byte wad partition)")
     if len(out) > part:
