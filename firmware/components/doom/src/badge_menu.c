@@ -369,7 +369,7 @@ badge_menu_choice_t BadgeMenu_RunInGame(void)
 
     for (;;)
     {
-        int key, pressed, i;
+        int key, i;
 
         Clear();
         WriteCentred(40, "BADGE MENU");
@@ -385,11 +385,14 @@ badge_menu_choice_t BadgeMenu_RunInGame(void)
         WriteCentred(160, "A SELECTS");
         Present();
 
-        while (DG_GetKey(&pressed, &key))
+        // Through PollKey, not DG_GetKey directly: DG_GetKey's second argument
+        // is an unsigned char *, and handing it an int * writes one byte and
+        // leaves three bytes of stack garbage in the high end, so every
+        // comparison below fails and the menu ignores the buttons entirely.
+        // The doom component builds with -Wno-incompatible-pointer-types, so
+        // nothing warned about it.
+        while ((key = PollKey()) != 0)
         {
-            if (!pressed)
-                continue;
-
             if (key == KEY_UPARROW)
                 cursor = (cursor + INGAME_ITEMS - 1) % INGAME_ITEMS;
             else if (key == KEY_DOWNARROW)
