@@ -32,6 +32,7 @@
 #include "d_main.h"
 #include "badge_menu.h"
 #include "badge_net.h"
+#include "badge_radio.h"
 
 // m_menu.c's text routines. m_menu.h does not declare them -- vanilla only
 // ever called them from inside m_menu.c.
@@ -191,6 +192,7 @@ badge_net_role_t BadgeMenu_Run(void)
     if (role != BADGE_NET_OFF)
     {
         printf("lobby: role already chosen before boot; skipping the menu\n");
+        BadgeNet_SetProgress(PairProgress);
         EnsureVideo();
         Clear();
         WriteCentred(88, role == BADGE_NET_HOST ? "WAITING FOR PLAYER 2..."
@@ -274,11 +276,24 @@ static boolean PairProgress(int elapsed_ms)
         last_shown = remaining;
 
         Clear();
-        WriteCentred(72, role == BADGE_NET_HOST ? "WAITING FOR PLAYER 2"
+        WriteCentred(64, role == BADGE_NET_HOST ? "WAITING FOR PLAYER 2"
                                                 : "LOOKING FOR A HOST");
         M_snprintf(line, sizeof(line), "%d SECONDS LEFT", remaining);
-        WriteCentred(96, line);
-        WriteCentred(128, "PRESS B TO PLAY ALONE");
+        WriteCentred(88, line);
+
+        // On the bench the serial log answers "is the radio actually working";
+        // on batteries there is no cable and this is the only way to tell a
+        // badge that is transmitting and hearing nothing from one that is not
+        // transmitting at all. SENT climbing with SEEN stuck on zero means the
+        // two badges cannot hear each other; SENT stuck means this badge's
+        // own transmitter is not getting frames away.
+        M_snprintf(line, sizeof(line), "SENT %u  SEEN %u  LOST %u",
+                   (unsigned)badge_radio_sent_ok(),
+                   (unsigned)badge_radio_received(),
+                   (unsigned)badge_radio_send_failures());
+        WriteCentred(112, line);
+
+        WriteCentred(140, "PRESS B TO PLAY ALONE");
         Present();
     }
 
