@@ -68,6 +68,8 @@
 #include "net_dedicated.h"
 #include "net_query.h"
 
+#include "badge_boot.h"
+
 #include "p_setup.h"
 #include "r_local.h"
 #include "statdump.h"
@@ -146,6 +148,8 @@ void D_ProcessEvents (void)
 	
     while ((ev = D_PopEvent()) != NULL)
     {
+	if (Boot_Responder (ev))
+	    continue;               // boot menu owns the buttons
 	if (M_Responder (ev))
 	    continue;               // menu ate the event
 	G_Responder (ev);
@@ -232,7 +236,10 @@ void D_Display (void)
 		break;
 
       case GS_DEMOSCREEN:
-		D_PageDrawer ();
+		if (bootscreen != BOOT_NONE)
+			Boot_Drawer ();
+		else
+			D_PageDrawer ();
 		break;
     }
     
@@ -593,9 +600,10 @@ void D_DoAdvanceDemo (void)
 //
 void D_StartTitle (void)
 {
-    gameaction = ga_nothing;
-    demosequence = -1;
-    D_AdvanceDemo ();
+    // The attract loop's demos warp to levels this board cannot load, so
+    // "title" means the boot menu here. End Game from the in-game menu lands
+    // on it too, which is how a player gets back to the mode choice.
+    Boot_Start ();
 }
 
 // Strings for dehacked replacements of the startup banner
@@ -1840,19 +1848,18 @@ void D_DoomMain (void)
 
     if (gameaction != ga_loadgame )
     {
-		// Boot straight into the map rather than the title screen. The attract
-		// demos each warp to their own level -- DEMO1 plays E1M5, which needs
-		// 240,189 bytes of level data -- so while a real Doom level is out of
-		// reach the title screen just crash-loops into a demo it cannot load.
-		autostart = true;
+		// The badge has one map and one skill. These are what Singleplayer
+		// launches from the boot menu; D_StartTitle shows that menu rather than
+		// the attract loop, whose demos warp to levels this board cannot load
+		// (DEMO1 plays E1M5, which needs 240,189 bytes of level data).
 		startepisode = 1;
 		startmap = 1;
 		startskill = sk_medium;
 
-		if (autostart || netgame)
+		if (netgame)
 			G_InitNew (startskill, startepisode, startmap);
 		else
-			D_StartTitle ();                // start up intro loop
+			D_StartTitle ();                // boot menu
     }
 
     D_DoomLoop ();
