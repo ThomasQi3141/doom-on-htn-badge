@@ -28,6 +28,11 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
     CMAP256
     DOOMGENERIC_RESX=320
     DOOMGENERIC_RESY=200
+    # Tethered bring-up: once a second, frame rate, gametic, zone free and any
+    # renderer overflow. The visplane limit is a bet on the arena's geometry
+    # being simple, and this is how the bet gets checked. Turn off for a demo,
+    # where nothing drains the port and the write can stall.
+    BADGE_FRAME_LOG=1
 )
 
 # Doom is 1993 C. These are upstream's warts, not ours, and burying our own
