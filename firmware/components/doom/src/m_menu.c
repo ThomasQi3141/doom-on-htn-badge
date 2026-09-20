@@ -123,7 +123,6 @@ boolean			menuactive;
 extern boolean		sendpause;
 char			savegamestrings[10][SAVESTRINGSIZE];
 
-char	endstring[160];
 
 //static boolean opldev;
 
@@ -1102,75 +1101,25 @@ void M_FinishReadThis(int choice)
 //
 // M_QuitDOOM
 //
-int     quitsounds[8] =
-{
-    sfx_pldeth,
-    sfx_dmpain,
-    sfx_popain,
-    sfx_slop,
-    sfx_telept,
-    sfx_posit1,
-    sfx_posit3,
-    sfx_sgtatk
-};
-
-int     quitsounds2[8] =
-{
-    sfx_vilact,
-    sfx_getpow,
-    sfx_boscub,
-    sfx_slop,
-    sfx_skeswg,
-    sfx_kntdth,
-    sfx_bspact,
-    sfx_sgtatk
-};
-
-
-
-void M_QuitResponse(int key)
-{
-    if (key != key_menu_confirm)
-	return;
-    if (!netgame)
-    {
-	if (gamemode == commercial)
-	    S_StartSound(NULL,quitsounds2[(gametic>>2)&7]);
-	else
-	    S_StartSound(NULL,quitsounds[(gametic>>2)&7]);
-	I_WaitVBL(105);
-    }
-    I_Quit ();
-}
-
-
-static char *M_SelectEndMessage(void)
-{
-    char **endmsg;
-
-    if (logical_gamemission == doom)
-    {
-        // Doom 1
-
-        endmsg = doom1_endmsg;
-    }
-    else
-    {
-        // Doom 2
-        
-        endmsg = doom2_endmsg;
-    }
-
-    return endmsg[gametic % NUM_QUITMESSAGES];
-}
-
-
+// There is no DOS to quit to, and I_Quit on this board runs the exit
+// functions and returns -- the game would simply carry on. So Quit Game
+// means "put the badge back on its home screen": leave the level, hang up a
+// co-op session, and show the boot menu, where Doom can be started again.
+//
+// There is no "press y to quit to dos" prompt: it asks about something that
+// cannot happen. This is the one way out of a co-op game -- End Game refuses
+// to leave a netgame.
+//
 void M_QuitDOOM(int choice)
 {
-    DEH_snprintf(endstring, sizeof(endstring), "%s\n\n" DOSY,
-                 DEH_String(M_SelectEndMessage()));
+    choice = 0;
 
-    M_StartMessage(endstring,M_QuitResponse,true);
+    currentMenu->lastOn = itemOn;
+    M_ClearMenus ();
+    S_StartSound(NULL,sfx_swtchx);
+
+    // Hangs up the radio and resets the multiplayer state on the way.
+    D_StartTitle ();
 }
 
 
@@ -1444,18 +1393,8 @@ boolean M_Responder (event_t* ev)
     // "close" button pressed on window?
     if (ev->type == ev_quit)
     {
-        // First click on close button = bring up quit confirm message.
-        // Second click on close button = confirm quit
-
-        if (menuactive && messageToPrint && messageRoutine == M_QuitResponse)
-        {
-            M_QuitResponse(key_menu_confirm);
-        }
-        else
-        {
-            S_StartSound(NULL,sfx_swtchn);
-            M_QuitDOOM(0);
-        }
+        // Quit Game asks nothing, so one click is the whole of it.
+        M_QuitDOOM(0);
 
         return true;
     }
