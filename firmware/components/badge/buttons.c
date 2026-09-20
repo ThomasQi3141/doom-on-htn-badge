@@ -3,6 +3,7 @@
 
 #include "driver/gpio.h"
 #include "esp_rom_sys.h"
+#include "freertos/FreeRTOS.h"
 
 // Indexed by BTN_BIT_*, so the order here follows the shift register, not the
 // order the buttons sit in on the badge.
@@ -38,8 +39,17 @@ void buttons_init(void)
     gpio_set_level(PIN_SR_CLK, 0);
 }
 
+// The shift-out below is bit-banged with 1 us between clock edges, and the
+// WiFi task runs at priority 23 -- above everything Doom uses. A preemption
+// between two edges stretches a pulse into something the 74HC165 may clock
+// twice, which reads back as a phantom press. The whole sequence is ~35 us of
+// interrupts-off, which is short enough not to disturb the radio.
+static portMUX_TYPE s_sr_lock = portMUX_INITIALIZER_UNLOCKED;
+
 uint16_t buttons_read(void)
 {
+    portENTER_CRITICAL(&s_sr_lock);
+
     // Pulse SH/LD low to latch the parallel inputs. Loading is asynchronous,
     // so QH already presents input H by the time we raise it again.
     gpio_set_level(PIN_SR_SHLD, 0);
@@ -58,6 +68,8 @@ uint16_t buttons_read(void)
     }
 
     if (gpio_get_level(PIN_BTN_START)) raw |= (1u << BTN_BIT_START);
+
+    portEXIT_CRITICAL(&s_sr_lock);
 
     // Active low: invert so a set bit means pressed.
     return (uint16_t)(~raw) & ((1u << BTN_BIT_COUNT) - 1);

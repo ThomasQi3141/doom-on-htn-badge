@@ -34,7 +34,10 @@
 // This is the maximum supported by the networking code; individual games
 // have their own values for MAXPLAYERS that can be smaller.
 
-#define NET_MAXPLAYERS 8
+// Upstream's eight. The badge's own MAXPLAYERS (doomdef.h:45) is already 4, so
+// the extra four slots were never addressable -- they only widened ticdata[],
+// local_playeringame[] and every net_gamesettings_t.
+#define NET_MAXPLAYERS 4
 
 // Maximum length of a player's name.
 
@@ -43,10 +46,14 @@
 // Networking and tick handling related.
 
 // Upstream buffers 128 tics so a netgame can resynchronise across latency.
-// A single badge has no peer to resynchronise with, and at 160 bytes per entry
-// the full ring costs 20,480 bytes of a 322 KB budget. Eight is more than a
-// local game ever runs ahead.
-#define BACKUPTICS 8
+// A single badge had no peer to resynchronise with, so this was cut to 8 -- but
+// 8 is only 228 ms of jitter slack, which lockstep over a radio will eat, and
+// BuildNewTic can then advance maketic onto the very slot being simulated.
+//
+// The NET_MAXPLAYERS and ticcmd_t trims above and in d_ticcmd.h took a
+// ticcmd_set_t from 136 bytes to 36, so this 32-deep ring costs 1,152 bytes
+// against the 1,088 the old 8-deep one used: four times the slack for 64 bytes.
+#define BACKUPTICS 32
 
 typedef struct _net_module_s net_module_t;
 typedef struct _net_packet_s net_packet_t;

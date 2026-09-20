@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Write a WAD image into the badge's 'wad' partition (0xB0000, 3,473,408 bytes).
+# Write a WAD image into the badge's 'wad' partition (0xF0000, 3,211,264 bytes).
 #
 #   tools/wad/flash-wad.sh badge.wad [/dev/cu.usbmodemXXXX]
 set -euo pipefail
@@ -8,8 +8,8 @@ PY="${PY:-/private/tmp/claude-501/-Users-tq-Documents-GitHub-doom-on-htn-badge/7
 WAD="${1:?usage: flash-wad.sh <image.wad> [port]}"
 PORT="${2:-$(ls /dev/cu.usbmodem* 2>/dev/null | head -1)}"
 
-WAD_OFFSET=0xB0000
-WAD_MAX=$((0x350000))
+WAD_OFFSET=0xF0000
+WAD_MAX=$((0x310000))
 
 size=$(stat -f%z "$WAD")
 if [ "$size" -gt "$WAD_MAX" ]; then

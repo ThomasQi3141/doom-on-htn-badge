@@ -5,12 +5,12 @@
 # attract-mode demos removed, the shareware IWAD is 3,362,373 bytes -- so it
 # fits here uncompressed, and no recompressed WAD format is needed.
 #
-# 640 KB for the app leaves 111 KB of WAD headroom. If the Doom binary outgrows
-# that, dropping HELP1 and CREDIT frees a further 136 KB of WAD, which pays for
-# moving the app partition up to 768 KB.
+# Co-op needs WiFi + ESP-NOW, which is 230-300 KB of code the 640 KB app could
+# not hold, so the app grows to 896 KB. The arena WAD is 2.59 MB of the 3.14 MB
+# that leaves, so the room comes out of WAD headroom that was never used.
 #
 # Name,     Type, SubType,  Offset,    Size
 nvs,        data, nvs,      0x9000,    0x4000
 phy_init,   data, phy,      0xd000,    0x1000
-factory,    app,  factory,  0x10000,   0xA0000
-wad,        data, 0x40,     0xB0000,   0x350000
+factory,    app,  factory,  0x10000,   0xE0000
+wad,        data, 0x40,     0xF0000,   0x310000

@@ -18,9 +18,9 @@ identity and contacts. There is no other way to get it back. Restore with:
 | file | offset | what |
 |---|---|---|
 | `bootloader.bin` | `0x0` | ESP-IDF second-stage bootloader |
-| `partition-table.bin` | `0x8000` | 640 KB app + 3,473,408 B wad |
+| `partition-table.bin` | `0x8000` | 896 KB app + 3,211,264 B wad |
 | `badge_doom.bin` | `0x10000` | the Doom engine and badge platform layer |
-| `doom-arena.wad` | `0xB0000` | game data plus the purpose-built arena |
+| `doom-arena.wad` | `0xF0000` | game data plus the purpose-built arena |
 
 `doom-arena.wad` is built from the shareware `DOOM1.WAD` and carries id
 Software's assets, so it is not committed. Regenerate it with:

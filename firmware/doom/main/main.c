@@ -18,6 +18,7 @@
 #include "display.h"
 #include "buttons.h"
 #include "video.h"
+#include "badge_radio.h"
 
 static const char *TAG = "doom";
 
@@ -59,6 +60,17 @@ void app_main(void)
     report_memory("boot");
 
     buttons_init();
+
+    // The radio has to come up here, before D_DoomMain, because of how the
+    // zone heap is sized: I_ZoneBase takes the largest contiguous block minus
+    // a small reserve, so whatever WiFi has not claimed by then is gone for
+    // good. Bringing it up first costs the zone whatever WiFi keeps, which is
+    // the honest accounting anyway -- the alternative is Z_Init succeeding and
+    // esp_wifi_start failing later with nothing left to allocate from.
+    if (badge_radio_init() != ESP_OK)
+        ESP_LOGE(TAG, "radio would not start; co-op will not be offered");
+    report_memory("after radio_init");
+
     display_init_bus();
     display_reset_and_init(PANEL_CONFIRMED);
     display_fill_rect(0, 0, 320, 240, 0x0000);
