@@ -96,6 +96,12 @@ uint32_t badge_radio_dropped(void);
 // sends are never acknowledged and so never counted here.
 uint32_t badge_radio_send_failures(void);
 
+// Frames the driver confirmed it transmitted, and frames accepted by the
+// receive callback. With a single badge and no peer, a rising sent-ok count
+// is the only evidence that the radio is really on the air.
+uint32_t badge_radio_sent_ok(void);
+uint32_t badge_radio_received(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -33,6 +33,8 @@ static uint8_t          s_mac[6];
 static uint8_t          s_seq;
 static volatile uint32_t s_dropped;
 static volatile uint32_t s_send_failures;
+static volatile uint32_t s_sent_ok;
+static volatile uint32_t s_received;
 
 // Runs on the WiFi task (priority 23), above everything Doom uses. It must not
 // block and must not take long: validate, copy, post, return.
@@ -54,6 +56,8 @@ static void on_recv(const esp_now_recv_info_t *info, const uint8_t *data, int le
     memcpy(pkt.data, data, (size_t)len);
 
     // Never block the WiFi task waiting for the game to catch up.
+    s_received++;
+
     if (xQueueSend(s_rx, &pkt, 0) != pdTRUE)
         s_dropped++;
 }
@@ -64,7 +68,12 @@ static void on_send(const esp_now_send_info_t *info, esp_now_send_status_t statu
     // Broadcast frames are never acknowledged, so this only ever reports on the
     // unicast handshake. Counting it separates "the peer never heard us" from
     // "the peer heard us and did not like it".
-    if (status != ESP_NOW_SEND_SUCCESS)
+    // For a broadcast this fires once the frame has actually been handed to
+    // the PHY and transmitted, so a rising s_sent_ok is proof the radio is
+    // on the air -- which is the only such proof available with one badge.
+    if (status == ESP_NOW_SEND_SUCCESS)
+        s_sent_ok++;
+    else
         s_send_failures++;
 }
 
@@ -255,4 +264,14 @@ uint32_t badge_radio_dropped(void)
 uint32_t badge_radio_send_failures(void)
 {
     return s_send_failures;
+}
+
+uint32_t badge_radio_sent_ok(void)
+{
+    return s_sent_ok;
+}
+
+uint32_t badge_radio_received(void)
+{
+    return s_received;
 }

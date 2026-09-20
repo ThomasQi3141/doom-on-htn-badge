@@ -13,6 +13,7 @@
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "esp_system.h"
+#include "esp_timer.h"
 
 #include "badge_pins.h"
 #include "display.h"
@@ -98,8 +99,44 @@ void app_main(void)
     D_DoomMain();
 
     ESP_LOGI(TAG, "entering the game loop");
+
+    // Radio smoke test, standing in for badge_net.c until it exists. One
+    // 78-byte ANNOUNCE a second -- the same frame size co-op's TICSET will
+    // use -- so the radio is exercised at a realistic size while Doom runs,
+    // and any interference with frame time or the 74HC165 shows up here
+    // rather than later. sent_ok rising proves the frame reached the PHY;
+    // received rising means a second badge is answering.
+    uint8_t probe[74];
+    memset(probe, 0xa5, sizeof(probe));
+    int64_t next_probe = 0;
+
     while (1)
     {
         doomgeneric_Tick();
+
+        if (badge_radio_ready())
+        {
+            int64_t now = esp_timer_get_time();
+            if (now >= next_probe)
+            {
+                next_probe = now + 1000000;
+                badge_radio_send(BADGE_MSG_ANNOUNCE, probe, sizeof(probe));
+
+                badge_radio_packet_t pkt;
+                while (badge_radio_recv(&pkt, 0))
+                {
+                    ESP_LOGI(TAG, "rx %u bytes from "
+                                  "%02x:%02x:%02x:%02x:%02x:%02x",
+                             (unsigned)pkt.len, pkt.mac[0], pkt.mac[1],
+                             pkt.mac[2], pkt.mac[3], pkt.mac[4], pkt.mac[5]);
+                }
+
+                ESP_LOGI(TAG, "radio: sent_ok %u, failures %u, rx %u, dropped %u",
+                         (unsigned)badge_radio_sent_ok(),
+                         (unsigned)badge_radio_send_failures(),
+                         (unsigned)badge_radio_received(),
+                         (unsigned)badge_radio_dropped());
+            }
+        }
     }
 }
