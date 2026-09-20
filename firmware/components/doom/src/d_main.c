@@ -50,6 +50,7 @@
 #include "m_controls.h"
 #include "m_misc.h"
 #include "m_menu.h"
+#include "badge_menu.h"
 #include "p_saveg.h"
 
 #include "i_endoom.h"
@@ -1775,8 +1776,18 @@ void D_DoomMain (void)
     DEH_printf("S_Init: Setting up sound.\n");
     S_Init (sfxVolume * 8, musicVolume * 8);
 
+    // The lobby runs here and nowhere later. Pairing happens inside
+    // BadgeNet_Pair(), which D_CheckNetGame reaches through D_StartNetGame, so
+    // a role chosen after this line would arrive after the only call that
+    // could have used it and the badge would boot single player whatever the
+    // player picked.
+    BadgeMenu_Run ();
+
     DEH_printf("D_CheckNetGame: Checking network game status.\n");
     D_CheckNetGame ();
+
+    // Pairing has run by now, so this is the first moment the answer exists.
+    BadgeMenu_ShowPairResult ();
 
     PrintGameVersion();
 

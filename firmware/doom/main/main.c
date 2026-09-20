@@ -103,15 +103,24 @@ void app_main(void)
     // good. Bringing it up first costs the zone whatever WiFi keeps, which is
     // the honest accounting anyway -- the alternative is Z_Init succeeding and
     // esp_wifi_start failing later with nothing left to allocate from.
-    if (BadgeNet_RequestedRole() != BADGE_NET_OFF)
+    // Unconditional, and that is a deliberate cost. The lobby screen cannot be
+    // drawn until the WAD is mapped and hu_font is cached, which is most of the
+    // way through D_DoomMain -- long after Z_Init has sized the zone from the
+    // largest contiguous block. Whatever WiFi has not claimed by then is gone,
+    // so a radio started later cannot start at all.
+    //
+    // Starting it here costs single player the difference: the zone is 57,344
+    // bytes with the radio up against 77,824 without. Measured, both run the
+    // arena at 23.6 fps, and the smaller one still holds 9,780 bytes spare --
+    // so the price is headroom we are not using, and it buys a co-op mode the
+    // player can actually reach from a menu instead of only by holding a
+    // button at power-on.
+    if (badge_radio_init() != ESP_OK)
     {
-        if (badge_radio_init() != ESP_OK)
-        {
-            ESP_LOGE(TAG, "radio would not start; booting single player");
-            BadgeNet_RequestRole(BADGE_NET_OFF);
-        }
-        report_memory("after radio_init");
+        ESP_LOGE(TAG, "radio would not start; co-op will not be offered");
+        BadgeNet_RequestRole(BADGE_NET_OFF);
     }
+    report_memory("after radio_init");
 
     display_init_bus();
     display_reset_and_init(PANEL_CONFIRMED);

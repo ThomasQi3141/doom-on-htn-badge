@@ -187,6 +187,21 @@ static boolean BuildNewTic(void)
     }
 
 #endif
+
+    // FEATURE_MULTIPLAYER stays off: it gates the NET_CL_* client, whose
+    // source files are not in this tree. badge_net.c replaces it, so the
+    // block above is dead and this is the live path.
+    //
+    // The order matters. The command goes to the network before it is stored
+    // into ticdata[], so the host's own tic travels the same route as the
+    // client's: built, handed to badge_net, then buffered. If it were stored
+    // first, the host could consume a tic badge_net had not yet scheduled,
+    // and the two badges would number the same input differently.
+    if (net_client_connected)
+    {
+        BadgeNet_SendTiccmd(&cmd, maketic);
+    }
+
     ticdata[maketic % BACKUPTICS].cmds[localplayer] = cmd;
     ticdata[maketic % BACKUPTICS].ingame[localplayer] = true;
 
@@ -222,6 +237,13 @@ void NetUpdate (void)
     NET_SV_Run();
 
 #endif
+
+    // Drains the radio and calls D_ReceiveTic() for whatever completed, which
+    // is what advances recvtic and so releases GetLowTic below.
+    if (net_client_connected)
+    {
+        BadgeNet_Run();
+    }
 
     // check time
     nowtime = GetAdjustedTime() / ticdup;
@@ -604,6 +626,8 @@ void D_QuitNetGame (void)
     NET_SV_Shutdown();
     NET_CL_Disconnect();
 #endif
+
+    BadgeNet_Shutdown();
 }
 
 static int GetLowTic(void)
@@ -612,7 +636,11 @@ static int GetLowTic(void)
 
     lowtic = maketic;
 
-#ifdef FEATURE_MULTIPLAYER
+    // Unconditional rather than widened to `#if defined(FEATURE_MULTIPLAYER)
+    // || defined(BADGE_NET)`: net_client_connected is already the runtime
+    // test this needs, and it is false in a single-player build, so the
+    // clamp costs one compare and the preprocessor buys nothing. Keeping one
+    // body also means the net path cannot rot behind a macro nobody sets.
     if (net_client_connected)
     {
         if (drone || recvtic < lowtic)
@@ -620,7 +648,6 @@ static int GetLowTic(void)
             lowtic = recvtic;
         }
     }
-#endif
 
     return lowtic;
 }

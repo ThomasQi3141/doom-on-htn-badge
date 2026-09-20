@@ -22,6 +22,15 @@
 
 #define BADGE_NET_PLAYERS 2
 
+// Uncomment to build the determinism harness: no radio, no peer, player 2's
+// input mirrors player 1's, and everything between BuildNewTic and the
+// consistancy check runs as it will on the air. A desync seen with this on is
+// ours; a desync seen only with it off is the air's.
+//
+// A #define rather than a build option on purpose -- the doom component's
+// CMakeLists.txt is shared, and this is a thing you turn on for an afternoon.
+#define BADGE_NET_LOOPBACK 1
+
 // How many tics each packet carries. Every send repeats the last few tics, so
 // one lost frame is repaired by the next packet rather than by a retransmit
 // request -- a round trip costs a whole render period on each side, and at
@@ -79,6 +88,11 @@ void BadgeNet_Run(void);
 
 // Called from D_QuitNetGame.
 void BadgeNet_Shutdown(void);
+
+// Defined in d_loop.c. Upstream declares it in net_client.h, which this port
+// does not build, so it is declared here instead of as a stray extern in the
+// one file that calls it. Pass (NULL, NULL) to signal a disconnect.
+void D_ReceiveTic(ticcmd_t *ticcmds, boolean *players_mask);
 
 // Diagnostics for the once-a-second bring-up log.
 int  BadgeNet_LastRecvTic(void);
