@@ -219,5 +219,89 @@ gone. Verified on hardware: all 9 levels present, 848,149 bytes of level data.
 **The remaining hard problem is RAM, not flash.**
 
 ## Escape hatch
-If the Doom binary outgrows 640 KB, dropping `HELP1` and `CREDIT` (68,168 bytes
-each) frees 136 KB of WAD, paying for a 768 KB app partition.
+If the Doom binary outgrows its partition, dropping `HELP1` and `CREDIT`
+(68,168 bytes each) frees 136 KB of WAD. (The radio, below, already used a
+different one: the arena WAD is 2.59 MB, so the app partition simply grew.)
+
+## The radio, measured
+
+The module has 2.4 GHz Wi-Fi and no other radio worth using between two
+badges, so badge-to-badge play is **ESP-NOW**: 802.11 action frames on a
+fixed channel, no access point, no IP stack. Everything below was measured on
+the badge with IDF v5.5.1 and `firmware/doom`, comparing a build without the
+radio component against one that starts it in `app_main` before `Z_Init`.
+
+The driver configuration is the smallest ESP-NOW will run on (see the
+`Radio` block in `firmware/doom/sdkconfig.defaults`): 2 static RX buffers,
+4 dynamic RX/TX, no AMPDU, no NVS, no softAP, no WPA3/enterprise, all IRAM
+speed options off, no `esp_netif`, no default event loop. Turning
+`CONFIG_ESP_WIFI_MBEDTLS_CRYPTO` off would save another 28 KB of flash but
+does not link in v5.5.1.
+
+### Flash
+
+| | bytes |
+|---|---|
+| app without radio | 480,900 |
+| app with radio | 806,016 |
+| **cost** | **+325 KB** (`libnet80211` 118 K, `libpp` 68 K, `libphy` 36 K, `libwpa_supplicant` 28 K, `libmbedcrypto` 28 K, rest IDF glue) |
+
+That is more than the 111 KB of headroom the 640 KB app partition had, so
+the partition table is now **1 MB app at `0x10000`, WAD at `0x110000`
+(3,080,192 bytes)**. The arena WAD `mkarena.py` builds is 2,591,387 bytes,
+leaving 477 KB; the full stripped shareware IWAD (3,362,373 bytes) no longer
+fits alongside the radio.
+
+### RAM
+
+Static, from `idf.py size` (the C3's IRAM and DRAM are one 400 KB pool, so
+IRAM code is DRAM lost):
+
+| | without | with | cost |
+|---|---|---|---|
+| `.bss` | 190,464 | 202,048 | +11.6 KB |
+| `.data` | 16,428 | 22,864 | +6.4 KB |
+| IRAM `.text` | 37,256 | 46,578 | +9.3 KB |
+| **static total** | | | **+27.3 KB** |
+
+Dynamic, at runtime: `esp_wifi_init` + `esp_wifi_start` + `esp_now_init`
+plus the radio task take **23,892 bytes** of heap and hold it for good.
+
+Startup: **~55 ms** from `esp_wifi_init` to ESP-NOW ready, with a full PHY
+calibration every boot (calibration data would need NVS).
+
+### What it did to the zone heap
+
+The Wi-Fi driver takes its DRAM out of the same block the zone heap wants,
+so the zone paid for all of it. Getting the arena to load again took three
+changes on the Doom side, each measured:
+
+| step | zone | arena |
+|---|---|---|
+| before the radio | 86,016 | loads, 30 KB free at play |
+| radio linked and started | 38,912 | **fails**: `Z_Malloc: failed on allocation of 2072 bytes` |
+| no default event loop (+3.9 KB) | 40,960 | fails |
+| `lumpinfo` slimmed 32 → 20 bytes/lump, name hash static (+16 KB) | 49,152 | fails |
+| `BADGE_ZONE_RESERVE` 12 KB → 4 KB (+8 KB) | **57,344** | **loads, 14,028 free at play** |
+
+The lump table change: with a memory-mapped WAD a lump is never cached in
+the zone and there is only one `wad_file`, so the `cache` and `wad_file`
+pointers were dead and the hash chain became a 16-bit index. The reserve
+change: everything allocated after `Z_Init`, through level load and play,
+measures under 1 KB.
+
+**Headroom shortfall: the zone has 14 KB free at play with the radio
+resident, against 30 KB without it.** The arena's own footprint is 43.3 KB.
+Frame rate is unchanged, 23.8 fps in the arena either way.
+
+A build with the radio compiled in but never started (`radio_init` not
+called, so the linker drops the driver) costs only the 8 KB of `.bss`/`.data`
+that other objects grew by; the 20 KB of driver statics are garbage-collected.
+That is the cheap way back if the radio has to go.
+
+### Link, measured between two badges
+
+The radio component runs a link test whenever two badges are connected:
+20-byte frames at 35 Hz, answered from the radio task rather than the game
+loop, with loss and round-trip time logged every second and shown on the
+connect screen. **Fill in from two badges:** sent / lost / RTT avg / RTT max.
