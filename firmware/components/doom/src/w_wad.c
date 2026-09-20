@@ -58,12 +58,20 @@ typedef struct
 
 // Location of each lump on disk.
 
+#define BADGE_MAX_LUMPS 1200
+
 lumpinfo_t *lumpinfo;		
 unsigned int numlumps = 0;
 
-// Hash table for fast lookups
+// The badge's single WAD, always memory-mapped. W_AddFile fills it in.
 
-static lumpinfo_t **lumphash;
+static wad_file_t *badge_wad;
+
+// Hash table for fast lookups: index + 1 into lumpinfo, 0 for empty.
+// Static, like lumpinfo itself, so it costs the zone nothing.
+
+static unsigned short lumphash[BADGE_MAX_LUMPS];
+static boolean lumphash_valid;
 
 // Hash function used for lump names.
 
@@ -95,7 +103,6 @@ unsigned int W_LumpNameHash(const char *s)
 // The badge loads exactly one WAD, known at build time, so a static array
 // removes the allocation, the reserve and the failure mode together. Entries
 // never move, so there is nothing to copy and no cache pointers to fix up.
-#define BADGE_MAX_LUMPS 1200
 static lumpinfo_t badge_lumpinfo[BADGE_MAX_LUMPS];
 
 static void ExtendLumpInfo(int newnumlumps)
@@ -200,12 +207,21 @@ wad_file_t *W_AddFile (char *filename)
 
     filerover = fileinfo;
 
+    if (badge_wad != NULL)
+    {
+        I_Error("W_AddFile: this build maps exactly one WAD");
+    }
+    if (wad_file->mapped == NULL)
+    {
+        I_Error("W_AddFile: the WAD must be memory-mapped");
+    }
+    badge_wad = wad_file;
+
     for (i=startlump; i<numlumps; ++i)
     {
-		lump_p->wad_file = wad_file;
 		lump_p->position = LONG(filerover->filepos);
 		lump_p->size = LONG(filerover->size);
-			lump_p->cache = NULL;
+		lump_p->next = 0;
 		strncpy(lump_p->name, filerover->name, 8);
 
 			++lump_p;
@@ -214,11 +230,7 @@ wad_file_t *W_AddFile (char *filename)
 
     Z_Free(fileinfo);
 
-    if (lumphash != NULL)
-    {
-        Z_Free(lumphash);
-        lumphash = NULL;
-    }
+    lumphash_valid = false;
 
     return wad_file;
 }
@@ -243,11 +255,12 @@ int W_NumLumps (void)
 int W_CheckNumForName (char* name)
 {
     lumpinfo_t *lump_p;
+    unsigned short n;
     int i;
 
     // Do we have a hash table yet?
 
-    if (lumphash != NULL)
+    if (lumphash_valid)
     {
         int hash;
         
@@ -255,8 +268,9 @@ int W_CheckNumForName (char* name)
 
         hash = W_LumpNameHash(name) % numlumps;
         
-        for (lump_p = lumphash[hash]; lump_p != NULL; lump_p = lump_p->next)
+        for (n = lumphash[hash]; n != 0; n = lump_p->next)
         {
+            lump_p = &lumpinfo[n - 1];
             if (!strncasecmp(lump_p->name, name, 8))
             {
                 return lump_p - lumpinfo;
@@ -340,7 +354,7 @@ void W_ReadLump(unsigned int lump, void *dest)
 	
     I_BeginRead ();
 	
-    c = W_Read(l->wad_file, l->position, dest, l->size);
+    c = W_Read(badge_wad, l->position, dest, l->size);
 
     if (c < l->size)
     {
@@ -378,32 +392,11 @@ void *W_CacheLumpNum(int lumpnum, int tag)
 
     lump = &lumpinfo[lumpnum];
 
-    // Get the pointer to return.  If the lump is in a memory-mapped
-    // file, we can just return a pointer to within the memory-mapped
-    // region.  If the lump is in an ordinary file, we may already
-    // have it cached; otherwise, load it into memory.
-
-    if (lump->wad_file->mapped != NULL)
-    {
-        // Memory mapped file, return from the mmapped region.
-
-        result = lump->wad_file->mapped + lump->position;
-    }
-    else if (lump->cache != NULL)
-    {
-        // Already cached, so just switch the zone tag.
-
-        result = lump->cache;
-        Z_ChangeTag(lump->cache, tag);
-    }
-    else
-    {
-        // Not yet loaded, so load it now
-
-        lump->cache = Z_Malloc(W_LumpLength(lumpnum), tag, &lump->cache);
-	W_ReadLump (lumpnum, lump->cache);
-        result = lump->cache;
-    }
+    // The WAD is memory-mapped, so the lump is already "loaded": return a
+    // pointer into the mapping. The zone is never involved, which is why
+    // the tag is unused and W_ReleaseLumpNum has nothing to do.
+    (void)tag;
+    result = badge_wad->mapped + lump->position;
 	
     return result;
 }
@@ -430,23 +423,12 @@ void *W_CacheLumpName(char *name, int tag)
 
 void W_ReleaseLumpNum(int lumpnum)
 {
-    lumpinfo_t *lump;
-
     if ((unsigned)lumpnum >= numlumps)
     {
 	I_Error ("W_ReleaseLumpNum: %i >= numlumps", lumpnum);
     }
 
-    lump = &lumpinfo[lumpnum];
-
-    if (lump->wad_file->mapped != NULL)
-    {
-        // Memory-mapped file, so nothing needs to be done here.
-    }
-    else
-    {
-        Z_ChangeTag(lump->cache, PU_CACHE);
-    }
+    // Memory-mapped file, so nothing needs to be done here.
 }
 
 void W_ReleaseLumpName(char *name)
@@ -527,18 +509,11 @@ void W_GenerateHashTable(void)
 {
     unsigned int i;
 
-    // Free the old hash table, if there is one
-
-    if (lumphash != NULL)
-    {
-        Z_Free(lumphash);
-    }
 
     // Generate hash table
     if (numlumps > 0)
     {
-        lumphash = Z_Malloc(sizeof(lumpinfo_t *) * numlumps, PU_STATIC, NULL);
-        memset(lumphash, 0, sizeof(lumpinfo_t *) * numlumps);
+        memset(lumphash, 0, sizeof(lumphash));
 
         for (i=0; i<numlumps; ++i)
         {
@@ -549,8 +524,10 @@ void W_GenerateHashTable(void)
             // Hook into the hash table
 
             lumpinfo[i].next = lumphash[hash];
-            lumphash[hash] = &lumpinfo[i];
+            lumphash[hash] = (unsigned short)(i + 1);
         }
+
+        lumphash_valid = true;
     }
 
     // All done!

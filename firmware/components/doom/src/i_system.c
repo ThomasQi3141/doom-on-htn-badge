@@ -126,7 +126,13 @@ void I_Tactile(int on, int off, int total)
 // what was available -- three separate debugging rounds came from it. The lump
 // directory is static now and nothing else large is allocated after Z_Init, so
 // a fixed reserve is both simpler and predictable.
-#define BADGE_ZONE_RESERVE (12 * 1024)
+//
+// Measured with the lump name hash static too: everything allocated after
+// Z_Init, through level load and play, comes to under 1 KB, and the smaller
+// heap fragments outside the zone's block hold ~8 KB besides. 4 KB is four
+// times what is used; the 8 KB this gives back is what lets the arena load
+// with the Wi-Fi driver resident.
+#define BADGE_ZONE_RESERVE (4 * 1024)
 
 static byte *AutoAllocMemory(int *size, int default_ram, int min_ram)
 {

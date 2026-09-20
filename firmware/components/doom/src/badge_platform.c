@@ -18,6 +18,7 @@
 #include "esp_partition.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -171,9 +172,10 @@ void DG_DrawFrame(void)
         // Zone free is in here because a crash that only happens "after a
         // while" is usually memory filling up, and that is visible before the
         // failure rather than only at it.
-        ESP_LOGI(TAG, "frame %d: %.1f fps, gametic %d, zone free %d, buttons 0x%03x",
+        ESP_LOGI(TAG, "frame %d: %.1f fps, gametic %d, zone free %d, heap free %u, buttons 0x%03x",
                  frames, 60.0 / ((now - t0) / 1000000.0),
-                 gametic, Z_FreeMemory(), buttons_read());
+                 gametic, Z_FreeMemory(),
+                 (unsigned)heap_caps_get_free_size(MALLOC_CAP_8BIT), buttons_read());
         if (badge_vp_overflow || badge_ds_overflow)
         {
             ESP_LOGW(TAG, "  renderer ran out: visplanes %d, drawsegs %d "
