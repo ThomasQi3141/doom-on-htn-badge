@@ -64,6 +64,10 @@ void TryRunTics (void);
 // Called at start of game loop to initialize timers
 void D_StartGameLoop(void);
 
+// Clears everything the tic loop carries between games, so a second game
+// started without a reboot does not inherit the first one's tics.
+void D_ResetLoop(void);
+
 // Initialize networking code and connect to server.
 
 boolean D_InitNetGame(net_connect_data_t *connect_data);

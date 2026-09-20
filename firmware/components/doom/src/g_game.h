@@ -76,5 +76,7 @@ int G_VanillaVersionCode(void);
 
 extern int vanilla_savegame_limit;
 extern int vanilla_demo_limit;
-#endif
+// Clears the per-player consistency history, for a game restarted in place.
+void G_ResetNetState (void);
 
+#endif

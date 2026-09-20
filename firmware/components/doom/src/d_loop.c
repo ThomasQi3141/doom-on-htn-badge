@@ -658,6 +658,11 @@ static int GetLowTic(void)
     return lowtic;
 }
 
+// File scope only so D_ResetLoop can clear it. Upstream keeps it as a
+// TryRunTics local static, which is fine when there is only ever one game --
+// after a restart a stale value makes the first frame believe a large number
+// of tics are owed and the game lurches.
+static int oldentertics;
 static int frameon;
 static int frameskip[4];
 static int oldnettics;
@@ -712,6 +717,28 @@ static void OldNetSync(void)
 }
 
 // Returns true if there are players in the game:
+
+// Everything the tic loop carries between games. Upstream initialises all of
+// this exactly once at boot, because upstream never starts a second game
+// without restarting the process. Switching mode in-game does, and a stale
+// maketic or a ticdata slot left over from the previous session is read as a
+// real tic by the next one -- which desyncs on the first frame.
+void D_ResetLoop(void)
+{
+    memset(ticdata, 0, sizeof(ticdata));
+    memset(local_playeringame, 0, sizeof(local_playeringame));
+    memset(frameskip, 0, sizeof(frameskip));
+
+    maketic = 0;
+    recvtic = 0;
+    gametic = 0;
+    localplayer = 0;
+    skiptics = 0;
+    lasttime = 0;
+    frameon = 0;
+    oldnettics = 0;
+    oldentertics = 0;
+}
 
 static boolean PlayersInGame(void)
 {
@@ -782,7 +809,6 @@ void TryRunTics (void)
     int	i;
     int	lowtic;
     int	entertic;
-    static int oldentertics;
     int realtics;
     int	availabletics;
     int	counts;

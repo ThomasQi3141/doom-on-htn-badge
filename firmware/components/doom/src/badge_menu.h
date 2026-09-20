@@ -32,4 +32,22 @@ badge_net_role_t BadgeMenu_Run(void);
 // for, so the single-player path still boots straight into the map.
 void BadgeMenu_ShowPairResult(void);
 
+// What the in-game lobby came back with.
+typedef enum
+{
+    BADGE_MENU_RESUME = 0,   // carry on with the game that is running
+    BADGE_MENU_SOLO,
+    BADGE_MENU_HOST,
+    BADGE_MENU_JOIN,
+    BADGE_MENU_DOOM,         // hand over to Doom's own menu
+} badge_menu_choice_t;
+
+// Draws the in-game lobby and blocks until the player chooses.
+badge_menu_choice_t BadgeMenu_RunInGame(void);
+
+// Asks for the lobby. Called from the event handler, which cannot tear a game
+// down where it stands; BadgeMenu_Service does the work at the top of a frame.
+void BadgeMenu_Request(void);
+void BadgeMenu_Service(void);
+
 #endif

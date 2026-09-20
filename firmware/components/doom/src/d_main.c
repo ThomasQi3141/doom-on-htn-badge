@@ -28,6 +28,7 @@
 #include "config.h"
 #include "deh_main.h"
 #include "doomdef.h"
+#include "doomkeys.h"
 #include "doomstat.h"
 
 #include "dstrings.h"
@@ -147,6 +148,19 @@ void D_ProcessEvents (void)
 	
     while ((ev = D_PopEvent()) != NULL)
     {
+	// HOME opens the badge's own lobby, which is the only way to start a
+	// different kind of game without a reboot -- Doom's menu refuses New
+	// Game and End Game whenever netgame is set, and in co-op it is.
+	//
+	// Only when Doom's menu is not already up: inside Options, HOME is the
+	// only way back out, and stealing it there would trap the player.
+	if (ev->type == ev_keydown && ev->data1 == KEY_ESCAPE
+	 && !menuactive && gamestate == GS_LEVEL)
+	{
+	    BadgeMenu_Request();
+	    continue;
+	}
+
 	if (M_Responder (ev))
 	    continue;               // menu ate the event
 	G_Responder (ev);
@@ -405,6 +419,12 @@ boolean D_GrabMouseCallback(void)
 
 void doomgeneric_Tick()
 {
+    // Before anything else in the frame. Switching mode tears down the tic
+    // loop and reloads the level, which is only safe outside TryRunTics,
+    // RunTic and D_Display -- and this is the one point that is outside all
+    // three.
+    BadgeMenu_Service();
+
     // frame syncronous IO operations
     I_StartFrame ();
 

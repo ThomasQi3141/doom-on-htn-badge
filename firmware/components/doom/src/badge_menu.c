@@ -18,11 +18,18 @@
 #include "deh_str.h"
 #include "hu_stuff.h"
 #include "i_video.h"
+#include "m_menu.h"
+#include "st_stuff.h"
+#include "r_main.h"
 #include "m_misc.h"
 #include "v_video.h"
 #include "w_wad.h"
 #include "z_zone.h"
 
+#include "d_loop.h"
+#include "g_game.h"
+#include "doomstat.h"
+#include "d_main.h"
 #include "badge_menu.h"
 #include "badge_net.h"
 
@@ -32,6 +39,12 @@ extern void M_WriteText(int x, int y, char *string);
 extern int  M_StringWidth(char *string);
 
 extern patch_t *hu_font[HU_FONTSIZE];
+
+// Neither of these is declared in a header this tree builds. D_CheckNetGame
+// lives in d_net.c and was only ever called from d_main.c; setsizeneeded is
+// r_main.c's flag that D_Display watches to know the view needs rebuilding.
+void D_CheckNetGame(void);
+extern boolean setsizeneeded;
 
 #define LOBBY_ITEMS 3
 
@@ -323,5 +336,142 @@ void BadgeMenu_ShowPairResult(void)
             HoldMessage("NO PARTNER FOUND", "1 PLAYER", 2000);
             break;
         }
+    }
+}
+
+// The in-game lobby has RESUME first, so the commonest thing a player wants
+// after opening it by accident is one button away.
+static const char *s_ingame_items[] =
+{
+    "RESUME",
+    "1 PLAYER",
+    "HOST CO-OP",
+    "JOIN CO-OP",
+    "DOOM MENU",
+};
+
+static const badge_menu_choice_t s_ingame_choices[] =
+{
+    BADGE_MENU_RESUME,
+    BADGE_MENU_SOLO,
+    BADGE_MENU_HOST,
+    BADGE_MENU_JOIN,
+    BADGE_MENU_DOOM,
+};
+
+#define INGAME_ITEMS 5
+
+badge_menu_choice_t BadgeMenu_RunInGame(void)
+{
+    int cursor = 0;
+
+    EnsureVideo();
+
+    for (;;)
+    {
+        int key, pressed, i;
+
+        Clear();
+        WriteCentred(40, "BADGE MENU");
+
+        for (i = 0; i < INGAME_ITEMS; i++)
+        {
+            char row[32];
+            M_snprintf(row, sizeof(row), "%s%s",
+                       i == cursor ? "> " : "  ", s_ingame_items[i]);
+            WriteCentred(72 + i * 16, row);
+        }
+
+        WriteCentred(160, "A SELECTS");
+        Present();
+
+        while (DG_GetKey(&pressed, &key))
+        {
+            if (!pressed)
+                continue;
+
+            if (key == KEY_UPARROW)
+                cursor = (cursor + INGAME_ITEMS - 1) % INGAME_ITEMS;
+            else if (key == KEY_DOWNARROW)
+                cursor = (cursor + 1) % INGAME_ITEMS;
+            else if (key == KEY_FIRE || key == KEY_ENTER)
+                return s_ingame_choices[cursor];
+            else if (key == KEY_ESCAPE)
+                return BADGE_MENU_RESUME;   // HOME again backs out
+        }
+
+        DG_SleepMs(30);
+    }
+}
+
+// ------------------------------------------------------------- in-game lobby
+//
+// The boot lobby answers "what kind of game is this?" exactly once, which left
+// a dead player with no way to start another one: Doom's own menu refuses New
+// Game and End Game while netgame is set, and in co-op it legitimately is.
+// This is the same screen, reachable at any time from HOME.
+
+static boolean s_lobby_wanted;
+
+void BadgeMenu_Request(void)
+{
+    s_lobby_wanted = true;
+}
+
+// Tearing down a game cannot happen inside the responder that asked for it --
+// D_ProcessEvents runs underneath TryRunTics, which is mid-way through the
+// very tic loop this resets. doomgeneric_Tick calls this at the top of the
+// frame instead, outside TryRunTics, RunTic and D_Display.
+static void RestartInto(badge_net_role_t role)
+{
+    BadgeNet_RequestRole(role);
+
+    // Deliberately not G_DeferedInitNew. That routes through G_DoNewGame,
+    // which zeroes netgame, deathmatch, consoleplayer and playeringame[1..3]
+    // before loading -- destroying the co-op state we are here to establish.
+    D_ResetLoop();
+    G_ResetNetState();
+    gameaction = ga_nothing;
+
+    // Re-runs pairing and republishes consoleplayer, playeringame[],
+    // netgame, localplayer and ticdup, exactly as it does at boot.
+    D_CheckNetGame();
+    BadgeMenu_ShowPairResult();
+
+    D_StartGameLoop();
+    G_InitNew(startskill, startepisode, startmap);
+}
+
+void BadgeMenu_Service(void)
+{
+    if (!s_lobby_wanted)
+        return;
+
+    s_lobby_wanted = false;
+
+    switch (BadgeMenu_RunInGame())
+    {
+      case BADGE_MENU_RESUME:
+        // The lobby painted over the frame and reset the palette. Ask for a
+        // full repaint rather than resuming onto a half-drawn view.
+        setsizeneeded = true;
+        ST_Start();
+        break;
+
+      case BADGE_MENU_DOOM:
+        M_StartControlPanel();
+        break;
+
+      case BADGE_MENU_SOLO:
+        RestartInto(BADGE_NET_OFF);
+        break;
+
+      case BADGE_MENU_HOST:
+        RestartInto(BADGE_NET_HOST);
+        break;
+
+      case BADGE_MENU_JOIN:
+        RestartInto(BADGE_NET_CLIENT);
+        break;
     }
 }
