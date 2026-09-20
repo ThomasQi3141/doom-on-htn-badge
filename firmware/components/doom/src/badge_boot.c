@@ -37,6 +37,7 @@
 #include "z_zone.h"
 #include "hu_stuff.h"
 #include "i_video.h"
+#include "i_system.h"
 
 #include <stdio.h>
 #include "esp_app_desc.h"
@@ -417,6 +418,16 @@ static void Boot_DrawMenu(void)
                                       PU_CACHE));
 
     Boot_DrawCentered(SCREENHEIGHT - 24, "UP/DOWN TO CHOOSE, START TO PLAY");
+
+    // On batteries there is no serial port to read, so the badge has to say
+    // this itself. "LOW POWER" here means the rail collapsed, which is the
+    // batteries or the boost converter, not the game.
+    if (I_ResetWasAbnormal())
+    {
+        char line[48];
+        snprintf(line, sizeof line, "LAST RESTART: %s", I_ResetReasonText());
+        Boot_DrawCentered(SCREENHEIGHT - 40, line);
+    }
 }
 
 // Shown between asking for a level and having one. In singleplayer that is

@@ -350,3 +350,37 @@ between two badges in the same room should ever see.
 
 **Fill in from two badges:** input-to-screen latency for the remote player,
 and the frame rate in a co-op level against the same level singleplayer.
+
+### Running on batteries
+
+Co-op worked on USB and reset the badge on batteries; singleplayer on
+batteries was fine. That combination is not a bug in the game, it is the
+supply: the badge runs two AA cells through an MT3608 boost and an LDO
+(above), and a Wi-Fi transmit burst is the largest current the board ever
+draws. USB hides it because VBUS can deliver it and two AAs through a boost
+converter cannot.
+
+Starting a game is where it broke because that is where the transmit rate
+doubles: the link test pings at TICRATE whenever a session exists, and the
+tic exchange adds a frame every tic on top.
+
+Two changes, both in `radio.c`:
+
+| | before | after |
+|---|---|---|
+| transmit rate in a game | ~70 frames/s | ~37 frames/s |
+| transmit power | 20 dBm (the default maximum) | 11 dBm |
+
+The ping drops to 2 Hz once game frames are flowing, because those frames
+already prove the link every tic — answering them as well is duplicated
+airtime, and `s_partner_heard_us` is updated by game traffic, so the session
+timeout still works. RTT is still sampled, just less often. Full-rate pinging
+resumes whenever the game stops sending for 200 ms.
+
+11 dBm is a fraction of the peak current and still reaches tens of metres
+between two badges that are, in practice, in the same pair of hands.
+
+**Fill in from two badges on batteries:** whether a full game now runs to
+completion, and the boot menu's `LAST RESTART:` line if it does not. That line
+is the diagnostic to read here — `LOW POWER` is the rail collapsing, `A CRASH`
+is the firmware, and they are indistinguishable from the outside.

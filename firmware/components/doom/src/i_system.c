@@ -49,6 +49,7 @@
 #include "i_system.h"
 #include "esp_heap_caps.h"
 #include "esp_attr.h"
+#include "esp_system.h"
 
 #include "w_wad.h"
 #include "z_zone.h"
@@ -394,6 +395,52 @@ static boolean already_quitting = false;
 #define BADGE_CRASH_MAGIC 0xD00D1E5Bu
 RTC_NOINIT_ATTR static uint32_t badge_crash_magic;
 RTC_NOINIT_ATTR static char     badge_crash_msg[192];
+
+// Why the badge last restarted, in words a person at a booth can act on.
+//
+// A crash and a collapsing power rail look identical from the outside -- the
+// screen blinks and the menu comes back -- and they need opposite responses.
+// The chip records which it was, and this is the only way to read it when the
+// badge is on batteries with no cable attached.
+const char *I_ResetReasonText(void)
+{
+    switch (esp_reset_reason())
+    {
+      case ESP_RST_POWERON:    return "POWER ON";
+      case ESP_RST_EXT:        return "RESET PIN";
+      case ESP_RST_SW:         return "RESTART";
+      case ESP_RST_PANIC:      return "A CRASH";
+      case ESP_RST_INT_WDT:    return "INTERRUPT WATCHDOG";
+      case ESP_RST_TASK_WDT:   return "TASK WATCHDOG";
+      case ESP_RST_WDT:        return "WATCHDOG";
+      case ESP_RST_BROWNOUT:   return "LOW POWER";
+      case ESP_RST_PWR_GLITCH: return "A POWER GLITCH";
+      case ESP_RST_CPU_LOCKUP: return "A LOCKED UP CPU";
+      case ESP_RST_DEEPSLEEP:  return "DEEP SLEEP";
+      case ESP_RST_USB:        return "USB";
+      case ESP_RST_JTAG:       return "JTAG";
+      default:                 return "SOMETHING UNKNOWN";
+    }
+}
+
+// True for the reasons worth putting on the screen: a clean power-on or a
+// deliberate restart is not news.
+boolean I_ResetWasAbnormal(void)
+{
+    switch (esp_reset_reason())
+    {
+      case ESP_RST_PANIC:
+      case ESP_RST_INT_WDT:
+      case ESP_RST_TASK_WDT:
+      case ESP_RST_WDT:
+      case ESP_RST_BROWNOUT:
+      case ESP_RST_PWR_GLITCH:
+      case ESP_RST_CPU_LOCKUP:
+        return true;
+      default:
+        return false;
+    }
+}
 
 void I_ReportLastCrash(void)
 {

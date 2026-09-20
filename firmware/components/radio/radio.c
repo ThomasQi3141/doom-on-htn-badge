@@ -105,7 +105,26 @@ _Static_assert(sizeof(msg_ping_t) == 20, "ping frame is 20 bytes");
 #define BEACON_PERIOD_US    250000      // 4 Hz: listed within a second
 #define PEER_TTL_US         3000000     // drop a peer 3 s after its last beacon
 #define OFFER_TIMEOUT_US    5000000
+
+// The link test pings at TICRATE while a session is idle. Once a game is
+// running it drops to 2 Hz, because the game's own frames are already
+// proving the link every tic and answering them is pure duplicated airtime.
+//
+// This is a power decision as much as a bandwidth one. The badge runs off two
+// AA cells through a boost converter (see HARDWARE.md), and a transmit burst
+// is the largest current the board ever draws. Pinging at 35 Hz *and* sending
+// a tic every 35 Hz doubles the number of those bursts at exactly the moment
+// the game starts -- which is where the rail was collapsing and resetting the
+// badge on battery while USB power hid it.
 #define PING_PERIOD_US      (1000000 / 35)
+#define PING_PERIOD_GAME_US 500000
+#define GAME_QUIET_US       200000      // no game frame for this long: idle
+
+// Transmit power, in units of 0.25 dBm. The default is the radio's maximum,
+// which is meant for reaching an access point across a building; two badges
+// are in the same hand. 11 dBm is still tens of metres between them and costs
+// a fraction of the peak current.
+#define RADIO_TX_POWER_QDBM 44
 #define SESSION_TTL_US      2000000     // nothing from the peer for 2 s: lost
 #define PING_SLOTS          16          // outstanding pings; ~457 ms at 35 Hz
 #define STATS_LOG_PERIOD_US 1000000
@@ -153,6 +172,10 @@ static int64_t          s_partner_heard_us;
 static struct { uint8_t len; uint8_t data[RADIO_MAX_FRAME]; } s_rx[RX_RING];
 static volatile unsigned s_rx_head, s_rx_tail;
 static uint32_t s_rx_dropped;
+
+// When the game last put a frame on the air, so the link test can stay out
+// of its way.
+static int64_t s_last_data_tx_us;
 
 // Link test.
 static radio_link_stats_t s_stats;
@@ -580,6 +603,7 @@ static void radio_task(void *arg)
         bool beaconing = s_discoverable;
         int64_t offer_sent = s_offer_sent_us;
         int64_t heard = s_partner_heard_us;
+        int64_t data_tx = s_last_data_tx_us;
         portEXIT_CRITICAL(&s_lock);
 
         if (beaconing && now >= next_beacon)
@@ -611,7 +635,8 @@ static void radio_task(void *arg)
             if (now >= next_ping)
             {
                 send_ping(now);
-                next_ping = now + PING_PERIOD_US;
+                next_ping = now + (now - data_tx < GAME_QUIET_US
+                                   ? PING_PERIOD_GAME_US : PING_PERIOD_US);
             }
             if (now >= next_log)
             {
@@ -669,6 +694,7 @@ bool radio_init(void)
      || (err = esp_wifi_set_mode(WIFI_MODE_STA)) != ESP_OK
      || (err = esp_wifi_start()) != ESP_OK
      || (err = esp_wifi_set_ps(WIFI_PS_NONE)) != ESP_OK
+     || (err = esp_wifi_set_max_tx_power(RADIO_TX_POWER_QDBM)) != ESP_OK
      || (err = esp_wifi_set_channel(RADIO_CHANNEL, WIFI_SECOND_CHAN_NONE)) != ESP_OK
      || (err = esp_now_init()) != ESP_OK
      || (err = esp_now_register_recv_cb(on_recv)) != ESP_OK
@@ -688,6 +714,9 @@ bool radio_init(void)
         return false;
     }
 
+    int8_t tx_power = 0;
+    esp_wifi_get_max_tx_power(&tx_power);
+
     esp_wifi_get_mac(WIFI_IF_STA, s_mac);
     snprintf(s_name, sizeof s_name, "BADGE-%02X%02X", s_mac[4], s_mac[5]);
 
@@ -703,9 +732,10 @@ bool radio_init(void)
     s_up = true;
 
     size_t after = heap_caps_get_free_size(MALLOC_CAP_8BIT);
-    ESP_LOGI(TAG, "%s up on channel %d in %u ms: DRAM %u -> %u (%u taken), "
-                  "largest block %u -> %u",
-             s_name, RADIO_CHANNEL, (unsigned)((esp_timer_get_time() - t0) / 1000),
+    ESP_LOGI(TAG, "%s up on channel %d at %.2f dBm in %u ms: DRAM %u -> %u "
+                  "(%u taken), largest block %u -> %u",
+             s_name, RADIO_CHANNEL, tx_power * 0.25,
+             (unsigned)((esp_timer_get_time() - t0) / 1000),
              (unsigned)before, (unsigned)after, (unsigned)(before - after),
              (unsigned)before_largest,
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
@@ -911,6 +941,7 @@ bool radio_send(const void *data, size_t len)
     portENTER_CRITICAL(&s_lock);
     bool ok = s_state == RADIO_CONNECTED;
     memcpy(mac, s_partner.mac, RADIO_MAC_LEN);
+    if (ok) s_last_data_tx_us = esp_timer_get_time();
     portEXIT_CRITICAL(&s_lock);
 
     return ok && send_raw(mac, buf, sizeof(hdr_t) + len);
