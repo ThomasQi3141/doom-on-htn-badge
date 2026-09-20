@@ -18,6 +18,7 @@
 #include "esp_partition.h"
 #include "esp_timer.h"
 #include "esp_log.h"
+#include "esp_rom_crc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -86,6 +87,36 @@ static wad_file_t *Badge_OpenFile(char *path)
     w->mapped = (byte *)s_wad_base;
     w->length = s_wad_len;
     return w;
+}
+
+// Two badges must agree they are running the same map data before they agree
+// to simulate it together. Doom's own answer is W_Checksum over a SHA-1 of the
+// lump directory, but sha1.c and w_checksum.c were stripped from this tree and
+// badge_stubs.c returns zeros -- so connect_data->wad_sha1sum is worthless here
+// and re-adding SHA-1 would cost ~6 KB for a stronger guarantee than a local
+// pairing handshake needs.
+//
+// A CRC32 over the directory is the right size of answer. The directory holds
+// every lump's name, offset and size, so any change to any map, texture or
+// sprite moves it. Seeding with the WAD length separates two WADs that somehow
+// collide on directory contents alone. It reads a few KB of mapped flash once,
+// well under a millisecond.
+uint32_t Badge_WadIdentity(void)
+{
+    if (s_wad_base == NULL)
+        return 0;
+
+    int numlumps, infotableofs;
+    memcpy(&numlumps, s_wad_base + 4, 4);
+    memcpy(&infotableofs, s_wad_base + 8, 4);
+
+    if (numlumps <= 0 || infotableofs <= 0 ||
+        (unsigned int)(infotableofs + numlumps * 16) > s_wad_len)
+        return 0;
+
+    return esp_rom_crc32_le((uint32_t)s_wad_len,
+                            (const uint8_t *)s_wad_base + infotableofs,
+                            (uint32_t)numlumps * 16);
 }
 
 static void Badge_CloseFile(wad_file_t *file)

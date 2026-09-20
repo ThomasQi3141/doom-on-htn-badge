@@ -20,6 +20,7 @@
 #include "buttons.h"
 #include "video.h"
 #include "badge_radio.h"
+#include "badge_net.h"
 
 static const char *TAG = "doom";
 
@@ -62,15 +63,55 @@ void app_main(void)
 
     buttons_init();
 
+    // The only moment a held button can be read before the engine starts
+    // consuming events. A hosts, B joins, nothing held is single player
+    // exactly as before.
+    //
+    // START is deliberately not an option: it is GPIO9, the ESP32-C3 boot
+    // strap, so holding it at power-on lands in ROM download mode instead of
+    // running the game at all.
+    {
+        uint16_t held = buttons_read();
+
+        // Bench override. Holding a button needs a hand on the badge, which
+        // rules out any test driven from the host over USB -- including the
+        // one that matters most, two badges pairing with each other. Build
+        // with -DBADGE_NET_FORCE_ROLE=1 to host or 2 to join.
+#ifdef BADGE_NET_FORCE_ROLE
+        held = 0;
+        ESP_LOGW(TAG, "BADGE_NET_FORCE_ROLE=%d compiled in; ignoring buttons",
+                 BADGE_NET_FORCE_ROLE);
+        BadgeNet_RequestRole(BADGE_NET_FORCE_ROLE == 1 ? BADGE_NET_HOST
+                                                       : BADGE_NET_CLIENT);
+#endif
+
+        if (held & (1u << BADGE_BTN_A))
+        {
+            ESP_LOGI(TAG, "A held at boot: hosting a co-op game");
+            BadgeNet_RequestRole(BADGE_NET_HOST);
+        }
+        else if (held & (1u << BADGE_BTN_B))
+        {
+            ESP_LOGI(TAG, "B held at boot: joining a co-op game");
+            BadgeNet_RequestRole(BADGE_NET_CLIENT);
+        }
+    }
+
     // The radio has to come up here, before D_DoomMain, because of how the
     // zone heap is sized: I_ZoneBase takes the largest contiguous block minus
     // a small reserve, so whatever WiFi has not claimed by then is gone for
     // good. Bringing it up first costs the zone whatever WiFi keeps, which is
     // the honest accounting anyway -- the alternative is Z_Init succeeding and
     // esp_wifi_start failing later with nothing left to allocate from.
-    if (badge_radio_init() != ESP_OK)
-        ESP_LOGE(TAG, "radio would not start; co-op will not be offered");
-    report_memory("after radio_init");
+    if (BadgeNet_RequestedRole() != BADGE_NET_OFF)
+    {
+        if (badge_radio_init() != ESP_OK)
+        {
+            ESP_LOGE(TAG, "radio would not start; booting single player");
+            BadgeNet_RequestRole(BADGE_NET_OFF);
+        }
+        report_memory("after radio_init");
+    }
 
     display_init_bus();
     display_reset_and_init(PANEL_CONFIRMED);

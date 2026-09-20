@@ -23,6 +23,8 @@
 
 #include "d_event.h"
 #include "d_loop.h"
+#include "badge_net.h"
+#include "doomstat.h"
 #include "d_ticcmd.h"
 
 #include "i_system.h"
@@ -437,12 +439,45 @@ void D_StartNetGame(net_gamesettings_t *settings,
     //    printf("Syncing netgames like Vanilla Doom.\n");
     //}
 #else
-    settings->consoleplayer = 0;
-	settings->num_players = 1;
+	int i;
+
+	recvtic = 0;
+
 	settings->player_classes[0] = player_class;
-	settings->new_sync = 0;
 	settings->extratics = 1;
 	settings->ticdup = 1;
+
+	// new_sync 0 selects OldNetSync below, which is what slaves the client's
+	// clock to the host's: the key player is the lowest index in
+	// local_playeringame[], so the client runs slightly fast when it falls
+	// behind and skips tics when it runs ahead. new_sync 1 needs an offsetms
+	// fed by the net client that is not in this tree.
+	settings->new_sync = 0;
+
+	// Single player unless pairing succeeded. Both cases go through here so
+	// there is exactly one place that decides who this badge is.
+	BadgeNet_Pair();
+	BadgeNet_FillSettings(settings);
+
+	net_client_connected = BadgeNet_Active();
+
+	// D_InitNetGame could only report intent. This is the truth, and it has
+	// to be right before G_InitNew runs: netgame drives co-op item respawn,
+	// the "monsters remember" flags and G_DoReborn's respawn path, and a badge
+	// that failed to pair must play exactly as it did before any of this.
+	netgame = BadgeNet_Active();
+
+	// Upstream's #else branch set consoleplayer and stopped, leaving
+	// localplayer and local_playeringame[] at their zero-initialised values.
+	// With one player that is accidentally correct. With two it is not:
+	// GetLowTic and PlayersInGame both read local_playeringame[], and the
+	// client would never be recognised as being in the game at all.
+	localplayer = settings->consoleplayer;
+
+	for (i = 0; i < NET_MAXPLAYERS; ++i)
+	{
+	    local_playeringame[i] = i < settings->num_players;
+	}
 
 	ticdup = settings->ticdup;
 	new_sync = settings->new_sync;
@@ -462,6 +497,12 @@ boolean D_InitNetGame(net_connect_data_t *connect_data)
     I_AtExit(D_QuitNetGame, true);
 
     player_class = connect_data->player_class;
+
+    // D_ConnectNetGame turns this into `netgame`, and it runs before d_main
+    // has even chosen startskill -- far too early to hold the handshake, whose
+    // START message has to carry the terms of the game. So report intent here
+    // and let D_StartNetGame correct `netgame` once pairing has actually run.
+    result = (BadgeNet_RequestedRole() != BADGE_NET_OFF);
 
 #ifdef FEATURE_MULTIPLAYER
 
