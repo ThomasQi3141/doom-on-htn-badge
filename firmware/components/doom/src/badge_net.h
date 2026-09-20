@@ -61,6 +61,29 @@ int BadgeNet_ConsolePlayer(void);
 // The peer's identity, for logging. NULL when not paired.
 const uint8_t *BadgeNet_PeerMac(void);
 
+// ---------------------------------------------------------------- tic exchange
+//
+// The contract between d_loop.c and badge_net.c. Both sides of it are written
+// independently, so it is fixed here first.
+
+// Called from BuildNewTic once a local ticcmd exists for `tic`, before it is
+// stored into ticdata[]. The host records it as player 0; the client
+// broadcasts it. Never blocks.
+void BadgeNet_SendTiccmd(ticcmd_t *cmd, int tic);
+
+// Called from NetUpdate. Drains the radio, merges what has arrived, and calls
+// D_ReceiveTic() zero or more times -- always in ascending tic order with no
+// gaps, because D_ReceiveTic carries no tic number and blindly increments
+// recvtic. Also owns the peer-timeout check. Never blocks.
+void BadgeNet_Run(void);
+
+// Called from D_QuitNetGame.
+void BadgeNet_Shutdown(void);
+
+// Diagnostics for the once-a-second bring-up log.
+int  BadgeNet_LastRecvTic(void);
+int  BadgeNet_StallTics(void);     // tics spent waiting on the peer
+
 // Fills in the parts of `settings` that pairing decided: num_players,
 // consoleplayer, and -- on the client -- the skill, episode and map the host
 // chose. Safe to call unpaired, in which case it sets the single-player
