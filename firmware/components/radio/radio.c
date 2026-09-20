@@ -453,9 +453,14 @@ static void handle_msg(const queued_msg_t *m, int64_t now)
         snprintf(unknown.name, RADIO_NAME_LEN, "BADGE-%02X%02X",
                  m->mac[4], m->mac[5]);
 
+        // Both pressed START at once: each is offering when the other's
+        // offer lands. Rather than trade "busy" refusals, the badge that
+        // would be player 2 yields and takes the incoming offer instead.
         bool taken = false;
         portENTER_CRITICAL(&s_lock);
-        if (s_state == RADIO_SCANNING)
+        if (s_state == RADIO_SCANNING
+            || (s_state == RADIO_OFFERING && mac_eq(m->mac, s_partner.mac)
+                && seat_for(m->mac) == 1))
         {
             peer_slot_t *p = find_peer_locked(m->mac);
             s_partner = p != NULL ? p->peer : unknown;
@@ -595,6 +600,8 @@ static void radio_task(void *arg)
             if (s_state == RADIO_OFFERING)
                 back_to_scanning_locked(RADIO_REFUSED_TIMEOUT);
             portEXIT_CRITICAL(&s_lock);
+            // Withdraw it, so their screen does not keep asking.
+            send_simple(s_partner.mac, MSG_BYE);
             forget_peer(s_partner.mac);
             ESP_LOGW(TAG, "offer to %s timed out", s_partner.name);
         }

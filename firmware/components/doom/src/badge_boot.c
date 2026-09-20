@@ -28,6 +28,7 @@
 #include "g_game.h"
 #include "i_swap.h"
 #include "m_menu.h"
+#include "m_misc.h"
 #include "s_sound.h"
 #include "sounds.h"
 #include "v_video.h"
@@ -93,6 +94,9 @@ static int message_tic;
 
 static uint32_t my_build_id;
 static uint32_t my_wad_id;
+
+// Who the outstanding offer went to: the list can reorder underneath it.
+static char invited[RADIO_NAME_LEN];
 
 static void Boot_ShowMenu(void)
 {
@@ -181,8 +185,11 @@ static void Boot_Offer(void)
     };
 
     if (radio_offer(peers[peer_on].mac, &s))
+    {
         S_StartSound(NULL, sfx_pistol);
-    else
+        M_StringCopy(invited, peers[peer_on].name, sizeof invited);
+    }
+    else if (radio_refusal() != RADIO_REFUSED_NONE)
     {
         // Incompatible: radio_offer has set the refusal for the drawer.
         S_StartSound(NULL, sfx_oof);
@@ -414,8 +421,7 @@ static void Boot_DrawConnect(void)
         break;
 
       case RADIO_OFFERING:
-        snprintf(line, sizeof line, "WAITING FOR %s%s",
-                 peer_count > 0 ? peers[peer_on].name : "THE OTHER BADGE", ell);
+        snprintf(line, sizeof line, "WAITING FOR %s%s", invited, ell);
         Boot_DrawCentered(y, line);
         Boot_DrawCentered(SCREENHEIGHT - 24, "HOME TO CANCEL");
         break;
