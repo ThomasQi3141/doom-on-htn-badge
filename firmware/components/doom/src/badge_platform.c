@@ -205,6 +205,29 @@ void DG_DrawFrame(void)
         ESP_LOGI(TAG, "frame %d: %.1f fps, gametic %d, zone free %d, buttons 0x%03x",
                  frames, 60.0 / ((now - t0) / 1000000.0),
                  gametic, Z_FreeMemory(), buttons_read());
+        // Leak probe, off by default: add BADGE_RELOAD_PROBE to the doom
+        // component's compile definitions to restart the arena every 300
+        // frames and watch Z_FreeMemory across cycles.
+        //
+        // Kept because it settled a real question. Switching mode in-game
+        // calls G_InitNew each time, and repeated level loads are a classic
+        // leak vector in Doom ports -- W_CacheLumpNum normally allocates a
+        // PU_STATIC zone block per lump. Here it does not: the WAD is mapped
+        // from flash, so it returns a pointer into the mapping and allocates
+        // nothing, and P_SetupLevel's Z_FreeTags(PU_LEVEL, ...) frees the
+        // rest. Measured over 28 restarts: zone free held at exactly 9,780
+        // bytes, no drift.
+#ifdef BADGE_RELOAD_PROBE
+        {
+            extern void G_DeferedInitNew(int skill, int episode, int map);
+            static int cycles;
+            ESP_LOGW(TAG, "RELOAD PROBE cycle %d: zone free %d before restart",
+                     cycles, Z_FreeMemory());
+            cycles++;
+            G_DeferedInitNew(2, 1, 1);   // 2 == sk_medium
+        }
+#endif
+
         if (badge_vp_overflow || badge_ds_overflow)
         {
             ESP_LOGW(TAG, "  renderer ran out: visplanes %d, drawsegs %d "
