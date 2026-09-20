@@ -653,6 +653,10 @@ void G_DoLoadLevel (void)
         skytexture = R_TextureNumForName(skytexturename);
     }
 
+    // A level exists from here on, so D_Display has something to draw and the
+    // boot screen can go.
+    Boot_Finish();
+
     levelstarttic = gametic;        // for time calculation
     
     if (wipegamestate == GS_LEVEL) 

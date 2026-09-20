@@ -180,7 +180,7 @@ void Boot_Start(void)
 
 static void Boot_StartSingleplayer(void)
 {
-    bootscreen = BOOT_NONE;
+    bootscreen = BOOT_STARTING;
     G_DeferedInitNew(startskill, startepisode, startmap);
 }
 
@@ -200,7 +200,7 @@ static void Boot_StartCoop(void)
         return;
     }
 
-    bootscreen = BOOT_NONE;
+    bootscreen = BOOT_STARTING;
     radio_set_discoverable(false);
 
     netgame = true;
@@ -342,7 +342,17 @@ boolean Boot_Responder(event_t *ev)
     if (bootscreen == BOOT_MENU)
         return Boot_MenuResponder(ev->data1);
 
+    // Nothing to press while a level is being started, and least of all HOME:
+    // hanging up here would strand the other badge in a game it cannot leave.
+    if (bootscreen == BOOT_STARTING)
+        return true;
+
     return Boot_ConnectResponder(ev->data1);
+}
+
+void Boot_Finish(void)
+{
+    bootscreen = BOOT_NONE;
 }
 
 void Boot_Ticker(void)
@@ -354,6 +364,12 @@ void Boot_Ticker(void)
     {
         skull_frame ^= 1;
         skull_tic = SKULL_TICS;
+    }
+
+    if (bootscreen == BOOT_STARTING)
+    {
+        connect_tic++;      // keeps the ellipsis moving while we wait
+        return;
     }
 
     if (bootscreen == BOOT_CONNECT)
@@ -401,6 +417,24 @@ static void Boot_DrawMenu(void)
                                       PU_CACHE));
 
     Boot_DrawCentered(SCREENHEIGHT - 24, "UP/DOWN TO CHOOSE, START TO PLAY");
+}
+
+// Shown between asking for a level and having one. In singleplayer that is
+// a single frame; in co-op it lasts until the other badge's first tic lands,
+// which is the whole reason this screen has to exist.
+static void Boot_DrawStarting(void)
+{
+    static const char *const dots[3] = { ".", "..", "..." };
+    char line[40];
+
+    V_DrawPatchDirect(LOGO_X, LOGO_Y,
+                      W_CacheLumpName(DEH_String("M_DOOM"), PU_CACHE));
+
+    snprintf(line, sizeof line, "STARTING%s", dots[(connect_tic / TICRATE) % 3]);
+    Boot_DrawCentered(SCREENHEIGHT / 2, line);
+
+    if (BadgeNet_Active())
+        Boot_DrawCentered(SCREENHEIGHT - 24, "WAITING FOR THE OTHER BADGE");
 }
 
 static const char *Boot_RefusalText(radio_refusal_t why)
@@ -546,6 +580,8 @@ void Boot_Drawer(void)
 
     if (bootscreen == BOOT_MENU)
         Boot_DrawMenu();
+    else if (bootscreen == BOOT_STARTING)
+        Boot_DrawStarting();
     else
         Boot_DrawConnect();
 }
