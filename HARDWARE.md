@@ -305,3 +305,48 @@ The radio component runs a link test whenever two badges are connected:
 20-byte frames at 35 Hz, answered from the radio task rather than the game
 loop, with loss and round-trip time logged every second and shown on the
 connect screen. **Fill in from two badges:** sent / lost / RTT avg / RTT max.
+
+### Co-op, measured
+
+Two badges run the same game by trading ticcmds and nothing else: both
+simulate from the same WAD, the same build and the same starting tic, so a
+tic is the only thing that has to cross the air. The radio already refuses to
+pair badges whose build or WAD hash differ, which is what makes that
+assumption safe to rest a simulation on.
+
+What it costs:
+
+| | bytes |
+|---|---|
+| tic frame on the air | 31 of the 32 the radio carries |
+| `.text`, `lockstep.c` + `badge_net.c` | 2,356 |
+| `.bss`, both | 344 |
+
+The frame is a header plus three consecutive tics rather than one, so any
+burst of lost frames inside that span costs nothing at all, and it names the
+oldest tic the sender is still missing — the only acknowledgement in the
+protocol, and what a retransmission aims at. Without it, a badge that had run
+its permitted five tics ahead would keep resending its *newest* tics while its
+peer sat waiting on an older one: both sides wait, neither sends what the
+other needs, and the game stops until the session times out. That failure is
+reproducible on a host and is what `tools/lockstep-test` was written around.
+
+`make -C tools/lockstep-test test` runs 21,000 tics — ten minutes at 35 Hz —
+through a channel that loses, duplicates and reorders frames, with one badge
+stepping at half the other's rate. Every tic delivered is checked against the
+cmd the other side actually built, so a divergence is caught rather than
+inferred:
+
+| link | longest stall |
+|---|---|
+| clean | 1 tic |
+| 5% loss | 3 tics |
+| 20% loss, reordering | 10 tics |
+| 20% loss, one badge at half rate | 13 tics |
+| 40% loss, one badge at half rate | 19 tics |
+
+Nineteen tics is about half a second, at four times the loss an ESP-NOW link
+between two badges in the same room should ever see.
+
+**Fill in from two badges:** input-to-screen latency for the remote player,
+and the frame rate in a co-op level against the same level singleplayer.

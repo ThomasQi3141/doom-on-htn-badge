@@ -5,7 +5,8 @@ Design intent: someone picks the badge up at a booth and is fighting within
 five seconds, without ever wondering where to go.
 
   - Spawn at the end of the south arm looking north, so the entire arena and
-    most of its occupants are visible from the first frame.
+    most of its occupants are visible from the first frame. The co-op starts
+    sit alongside it, so two paired badges begin shoulder to shoulder.
   - A shotgun sits a few steps ahead. The first thing anyone does is grab it.
   - Four arms radiate from a central chamber, each holding a weapon and its own
     enemies, so moving forward is always rewarded and never ambiguous.
@@ -40,7 +41,12 @@ FLOOR_F, CEIL_F = "FLOOR4_8", "CEIL3_5"
 PLAT_F          = "FLAT14"
 
 # --- thing types present in the shareware IWAD ----------------------------
-PLAYER, SHOTGUN, CHAINGUN, CHAINSAW = 1, 2001, 2002, 2005
+# Thing type 1..4 is the start for player 1..4, and 11 is a deathmatch spot.
+# Doom refuses to load a level in which a player in the game has no start, so
+# 2..4 are here even though the badge only ever seats two: a map that works
+# for co-op and not for a four-way is a trap for later.
+PLAYER, PLAYER2, PLAYER3, PLAYER4, DMSTART = 1, 2, 3, 4, 11
+SHOTGUN, CHAINGUN, CHAINSAW = 2001, 2002, 2005
 ARMOR, MEGAARMOR, MEDIKIT, STIMPACK = 2018, 2019, 2012, 2011
 SHELLS, CLIP, AMMOBOX, HEALTHBONUS  = 2008, 2007, 2048, 2014
 ZOMBIE, SHOTGUY, IMP, DEMON         = 3004, 9, 3001, 3002
@@ -124,6 +130,21 @@ def build():
     # view on the first frame.
     m.thing(0, -ARM + 140, PLAYER, 90)
 
+    # Co-op: the second badge spawns beside the first, facing the same way, so
+    # the two players see each other immediately and share the same opening
+    # view of the arena. Players 3 and 4 fill in behind them -- the badge pairs
+    # two at a time, but a start missing for a player in the game is a refused
+    # level, not a missing player.
+    m.thing(-130, -ARM + 140, PLAYER2, 90)
+    m.thing(130, -ARM + 140, PLAYER3, 90)
+    m.thing(0, -ARM + 268, PLAYER4, 90)
+
+    # Deathmatch spots, one at the end of each arm: co-op is what the badge
+    # offers today, but G_DeathMatchSpawnPlayer is fatal without them.
+    for (dx, dy, da) in ((0, -900, 90), (0, 900, 270), (900, 0, 180),
+                         (-900, 0, 0)):
+        m.thing(dx, dy, DMSTART, da)
+
     # Reachable before anything closes in.
     m.thing(0, -430, SHOTGUN)
     m.thing(-70, -430, SHELLS)
@@ -201,6 +222,25 @@ def validate(m):
             if min(clear_x, clear_y) < 40:
                 problems.append(f"thing {ty} at ({x},{y}) is {min(clear_x,clear_y)} "
                                 f"from a wall")
+
+    # Co-op starts have to be far enough apart that every player can stand on
+    # one at once: P_SpawnPlayer does not check, and a co-op game that
+    # telefrags one of its two players on the first tic is a very confusing
+    # bug to meet on hardware. Doom's player radius is 16, so 64 is
+    # comfortable. Deathmatch spots are left out of the comparison: they are
+    # only ever used in a game where the co-op starts are not.
+    starts = [(x, y, ty) for (x, y, a, ty, f) in m.things
+              if ty in (PLAYER, PLAYER2, PLAYER3, PLAYER4)]
+    for i, (x1, y1, t1) in enumerate(starts):
+        for (x2, y2, t2) in starts[i + 1:]:
+            if abs(x1 - x2) < 64 and abs(y1 - y2) < 64:
+                problems.append(f"starts {t1} at ({x1},{y1}) and {t2} at "
+                                f"({x2},{y2}) are on top of each other")
+
+    for want in (PLAYER, PLAYER2, PLAYER3, PLAYER4):
+        if not any(ty == want for (_, _, ty) in starts):
+            problems.append(f"no start for player {want}")
+
     return problems
 
 

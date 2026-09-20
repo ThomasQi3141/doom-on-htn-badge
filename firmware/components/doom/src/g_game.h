@@ -37,6 +37,11 @@ void G_InitNew (skill_t skill, int episode, int map);
 // but a warp test can start elsewhere
 void G_DeferedInitNew (skill_t skill, int episode, int map);
 
+// The same, for a game whose multiplayer globals -- netgame, deathmatch,
+// consoleplayer, playeringame[] -- the caller has already set up and does not
+// want reset. The badge's co-op start uses it (badge_boot.c).
+void G_DeferedInitNetGame (skill_t skill, int episode, int map);
+
 void G_DeferedPlayDemo (char* demo);
 
 // Can be called by the startup code or M_Responder,

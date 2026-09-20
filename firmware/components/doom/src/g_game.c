@@ -73,6 +73,7 @@
 #include "g_game.h"
 
 #include "badge_boot.h"
+#include "badge_net.h"
 
 
 #define SAVEGAMESIZE	0x2c000
@@ -950,8 +951,22 @@ void G_Ticker (void)
 		if (gametic > BACKUPTICS 
 		    && consistancy[i][buf] != cmd->consistancy) 
 		{ 
-		    I_Error ("consistency failure (%i should be %i)",
-			     cmd->consistancy, consistancy[i][buf]); 
+		    // On a PC this is fatal: the two games have diverged and
+		    // nothing after it means anything. On a badge at a booth,
+		    // dying on the spot is the worst possible answer -- the
+		    // player is left with a dead screen and no idea why. Drop
+		    // the link instead and keep this badge playable.
+		    //
+		    // Never I_Error here, not even as a fallback: netgame is
+		    // only ever set on this build by the co-op start, so a
+		    // mismatch always means these two badges diverged, and
+		    // both seats usually report it on the same tic. The second
+		    // report arrives with the link already gone and nothing
+		    // left to drop -- it is the same event, not a new one.
+		    printf("consistency failure for player %i "
+			   "(%i should be %i)\n",
+			   i + 1, cmd->consistancy, consistancy[i][buf]);
+		    BadgeNet_Drop("LOST SYNC WITH THE OTHER BADGE");
 		} 
 		if (players[i].mo) 
 		    consistancy[i][buf] = players[i].mo->x; 
@@ -1712,8 +1727,34 @@ G_DeferedInitNew
 } 
 
 
+// Set by G_DeferedInitNetGame: the badge's co-op start has already put
+// netgame, deathmatch, consoleplayer and playeringame[] where it wants them,
+// and G_DoNewGame's reset below would undo every one of them.
+static boolean deferred_netgame;
+
+void
+G_DeferedInitNetGame
+( skill_t	skill,
+  int		episode,
+  int		map) 
+{ 
+    deferred_netgame = true;
+    G_DeferedInitNew (skill, episode, map);
+} 
+
+
 void G_DoNewGame (void) 
 {
+    if (deferred_netgame)
+    {
+	deferred_netgame = false;
+	demoplayback = false;
+	netdemo = false;
+	G_InitNew (d_skill, d_episode, d_map);
+	gameaction = ga_nothing;
+	return;
+    }
+
     demoplayback = false; 
     netdemo = false;
     netgame = false;

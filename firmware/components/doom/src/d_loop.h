@@ -74,6 +74,24 @@ boolean D_InitNetGame(net_connect_data_t *connect_data);
 void D_StartNetGame(net_gamesettings_t *settings,
                     netgame_startup_callback_t callback);
 
+// Invoked by the network engine when a complete set of ticcmds is available.
+void D_ReceiveTic(ticcmd_t *ticcmds, boolean *players_mask);
+
+// --- two-badge lockstep (badge_net.c) -----------------------------------
+//
+// The badge has no server and no net client: co-op is two badges trading
+// ticcmds directly. These give badge_net.c the little of d_loop's private
+// bookkeeping it needs, rather than duplicating it.
+
+// Take our seat and start numbering tics from here.
+void D_LockstepStart(int seat);
+
+// Back to one player. The loop stops waiting for the other seat at once.
+void D_LockstepStop(void);
+
+int D_MakeTic(void);    // the next tic to be built
+int D_RecvTic(void);    // the next tic still owed by the peer
+
 extern boolean singletics;
 extern int gametic, ticdup;
 
